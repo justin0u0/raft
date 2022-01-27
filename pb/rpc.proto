@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+package pb;
+
+import "pb/message.proto";
+
+option go_package = "github.com/justin0u0/raft/pb";
+
+service Raft {
+	// external RPCs
+
+	// internal RPCs
+
+	rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
+
+	rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse) {}
+}

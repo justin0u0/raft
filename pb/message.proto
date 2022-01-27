@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package pb;
+
+option go_package = "github.com/justin0u0/raft/pb";
+
+message Entry {
+	uint64 id = 1;
+	uint64 term = 2;
+	bytes data = 3;
+}
+
+message AppendEntriesRequest {
+	uint64 term = 1;
+	uint32 leader_id = 2;
+	uint64 leader_commit_id = 3;
+	uint64 prev_log_id = 4;
+	uint64 prev_log_term = 5;
+	repeated Entry entries = 6;
+}
+
+message AppendEntriesResponse {
+	uint64 term = 1;
+	bool success = 2;
+}
+
+message RequestVoteRequest {
+	uint64 term = 1;
+	uint32 candidate_id = 2;
+	uint64 last_log_id = 3;
+	uint64 last_log_term = 4;
+}
+
+message RequestVoteResponse {
+	uint64 term = 1;
+	bool vote_granted = 2;
+}
