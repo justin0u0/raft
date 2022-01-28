@@ -25,11 +25,24 @@ type raft struct {
 }
 
 func NewRaft(id uint32, peers []*peer, config *Config, logger *zap.Logger) pb.RaftServer {
+	raftState := raftState{
+		state:       Follower,
+		currentTerm: 0,
+		votedFor:    0,
+		logs:        make([]*pb.Entry, 0),
+		commitIndex: 0,
+		lastApplied: 0,
+		nextIndex:   make(map[uint32]int64),
+		matchIndex:  make(map[uint32]int64),
+	}
+
 	return &raft{
-		id:     id,
-		peers:  peers,
-		config: config,
-		logger: logger.With(zap.Uint32("id", id)),
+		raftState:     raftState,
+		id:            id,
+		peers:         peers,
+		config:        config,
+		logger:        logger.With(zap.Uint32("id", id)),
+		lastHeartbeat: time.Now(),
 	}
 }
 
