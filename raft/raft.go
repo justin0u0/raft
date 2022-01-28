@@ -272,7 +272,7 @@ func (r *raft) runLeader(ctx context.Context) {
 			return
 
 		case <-timeoutCh:
-			timeoutCh = randomTimeout(r.config.HeartbeatTimeout)
+			timeoutCh = randomTimeout(r.config.HeartbeatInterval)
 
 			r.broadcastHeartbeat(ctx, heartbeatCh)
 
