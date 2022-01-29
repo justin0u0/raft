@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"runtime"
 	"testing"
 	"time"
 
@@ -91,6 +92,8 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 		c.cancelFuncs[id] = cancel
 	}
 
+	c.warnNumberOfCPUs()
+
 	return &c
 }
 
@@ -137,5 +140,11 @@ func (c *cluster) checkSingleLeader() {
 
 	if leaderId == 0 {
 		c.t.Fatal("no leader found")
+	}
+}
+
+func (c *cluster) warnNumberOfCPUs() {
+	if runtime.NumCPU() < 2 {
+		c.logger.Warn("number of CPUs < 2, may not test race condition of Raft algorithm")
 	}
 }
