@@ -97,6 +97,15 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	return &c
 }
 
+func (c *cluster) shutdown() {
+	for id := range c.rafts {
+		c.servers[id].GracefulStop()
+
+		cancel := c.cancelFuncs[id]
+		cancel()
+	}
+}
+
 func (c *cluster) connect(serverId, clientId uint32) {
 	peers := c.rafts[serverId].peers
 	peer := peers[clientId].(*peer)
