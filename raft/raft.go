@@ -144,7 +144,7 @@ func (r *raft) runFollower(ctx context.Context) {
 		case <-timeoutCh:
 			timeoutCh = randomTimeout(r.config.HeartbeatTimeout)
 
-			if time.Now().Sub(r.lastHeartbeat) < r.config.HeartbeatTimeout {
+			if time.Now().Sub(r.lastHeartbeat) > r.config.HeartbeatTimeout {
 				r.handleFollowerHeartbeatTimeout()
 			}
 		}
