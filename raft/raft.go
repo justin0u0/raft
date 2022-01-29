@@ -88,12 +88,14 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	if req.GetTerm() > r.currentTerm {
 		r.toFollower(req.GetTerm())
 
-		r.logger.Info("increase term since receive a newer one")
+		r.logger.Info("increase term since receive a newer one", zap.Uint64("term", r.currentTerm))
 	}
 
 	// reject if already vote for another candidate
 	if r.votedFor != 0 && r.votedFor != req.GetCandidateId() {
-		r.logger.Info("reject since already vote for another candidate")
+		r.logger.Info("reject since already vote for another candidate",
+			zap.Uint64("term", r.currentTerm),
+			zap.Uint32("votedFor", r.votedFor))
 
 		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}, nil
 	}
@@ -214,7 +216,7 @@ func (r *raft) voteForSelf(grantedVotes *int) {
 }
 
 func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult) {
-	r.logger.Info("broadcast request vote")
+	r.logger.Info("broadcast request vote", zap.Uint64("term", r.currentTerm))
 
 	lastLogId, lastLogTerm := r.getLastLog()
 
