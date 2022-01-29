@@ -78,10 +78,8 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 		}(c.listerers[id])
 	}
 
-	for id, raft := range c.rafts {
-		for peerId := range raft.peers {
-			c.connect(id, peerId)
-		}
+	for id := range c.rafts {
+		c.connectAll(id)
 	}
 
 	for id, raft := range c.rafts {
@@ -106,15 +104,15 @@ func (c *cluster) shutdown() {
 	}
 }
 
-func (c *cluster) connect(serverId, clientId uint32) {
+func (c *cluster) connect(serverId, peerId uint32) {
 	peers := c.rafts[serverId].peers
-	peer := peers[clientId].(*peer)
+	peer := peers[peerId].(*peer)
 
-	addr := c.listerers[clientId].Addr().String()
+	addr := c.listerers[peerId].Addr().String()
 
 	c.logger.Debug("connect server with peer",
 		zap.Uint32("server", serverId),
-		zap.Uint32("client", clientId),
+		zap.Uint32("peer", peerId),
 		zap.String("addr", addr))
 
 	if err := peer.dial(addr, grpc.WithInsecure()); err != nil {
@@ -122,10 +120,22 @@ func (c *cluster) connect(serverId, clientId uint32) {
 	}
 }
 
+func (c *cluster) connectAll(serverId uint32) {
+	peers := c.rafts[serverId].peers
+
+	for peerId := range peers {
+		c.connect(serverId, peerId)
+	}
+}
+
 // disconnect disconnect connection from server to peer
 func (c *cluster) disconnect(serverId, peerId uint32) {
 	peers := c.rafts[serverId].peers
 	peer := peers[peerId].(*peer)
+
+	c.logger.Debug("disconnect server with peer",
+		zap.Uint32("server", serverId),
+		zap.Uint32("peer", peerId))
 
 	if err := peer.close(); err != nil {
 		c.t.Fatal("fail to disconnect to peer:", err)
@@ -137,11 +147,7 @@ func (c *cluster) disconnectAll(serverId uint32) {
 	peers := c.rafts[serverId].peers
 
 	for peerId := range peers {
-		peer := peers[peerId].(*peer)
-
-		if err := peer.close(); err != nil {
-			c.t.Fatal("fail to disconnect to peer:", err)
-		}
+		c.disconnect(serverId, peerId)
 	}
 }
 
