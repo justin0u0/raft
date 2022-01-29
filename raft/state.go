@@ -61,7 +61,7 @@ func (rs *raftState) getLastLog() (id, term uint64) {
 func (rs *raftState) toFollower(term uint64) {
 	rs.state = Follower
 
-	if rs.currentTerm > term {
+	if rs.currentTerm < term {
 		rs.currentTerm = term
 		rs.votedFor = 0
 	}

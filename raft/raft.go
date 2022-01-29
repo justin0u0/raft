@@ -172,9 +172,7 @@ func (r *raft) runCandidate(ctx context.Context) {
 	votesNeeded := (len(r.peers)+1)/2 + 1
 
 	// vote for itself
-	r.currentTerm++
-	r.votedFor = r.id
-	grantedVotes++
+	r.voteForSelf(&grantedVotes)
 
 	// request votes from peers
 	voteCh := make(chan *voteResult, len(r.peers))
@@ -200,6 +198,17 @@ func (r *raft) runCandidate(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (r *raft) voteForSelf(grantedVotes *int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	r.currentTerm++
+	r.votedFor = r.id
+	(*grantedVotes)++
+
+	r.logger.Info("vote for self", zap.Uint64("term", r.currentTerm))
 }
 
 func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult) {
