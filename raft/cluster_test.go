@@ -122,17 +122,34 @@ func (c *cluster) connect(serverId, clientId uint32) {
 	}
 }
 
-func (c *cluster) disconnect(serverId, clientId uint32) {
+// disconnect disconnect connection from server to peer
+func (c *cluster) disconnect(serverId, peerId uint32) {
 	peers := c.rafts[serverId].peers
-	peer := peers[clientId].(*peer)
+	peer := peers[peerId].(*peer)
 
 	if err := peer.close(); err != nil {
 		c.t.Fatal("fail to disconnect to peer:", err)
 	}
 }
 
-func (c *cluster) checkSingleLeader() {
-	leaderId := uint32(0)
+// disconnect disconnect all connections from server to all its peers
+func (c *cluster) disconnectAll(serverId uint32) {
+	peers := c.rafts[serverId].peers
+
+	for peerId := range peers {
+		peer := peers[peerId].(*peer)
+
+		if err := peer.close(); err != nil {
+			c.t.Fatal("fail to disconnect to peer:", err)
+		}
+	}
+}
+
+// checkSingleLeader check if there is only one leader
+// and returns the leader's ID and the leader's term
+func (c *cluster) checkSingleLeader() (uint32, uint64) {
+	var leaderId uint32
+	var leaderTerm uint64
 
 	for _, raft := range c.rafts {
 		raft.mu.Lock()
@@ -141,6 +158,7 @@ func (c *cluster) checkSingleLeader() {
 		if raft.state == Leader {
 			if leaderId == 0 {
 				leaderId = raft.id
+				leaderTerm = raft.currentTerm
 			} else {
 				c.t.Fatalf("both %d and %d thinks they are leader", leaderId, raft.id)
 			}
@@ -150,6 +168,8 @@ func (c *cluster) checkSingleLeader() {
 	if leaderId == 0 {
 		c.t.Fatal("no leader found")
 	}
+
+	return leaderId, leaderTerm
 }
 
 func (c *cluster) warnNumberOfCPUs() {
