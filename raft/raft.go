@@ -245,8 +245,7 @@ func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded
 	defer r.mu.Unlock()
 
 	if vote.GetTerm() > r.currentTerm {
-		r.state = Follower
-		r.currentTerm = vote.GetTerm()
+		r.toFollower(vote.GetTerm())
 
 		r.logger.Info("receive new term on RequestVote response, fallback to follower", zap.Uint32("peer", vote.peerId))
 		return
