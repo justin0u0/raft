@@ -15,7 +15,7 @@ type raft struct {
 	raftState
 
 	id    uint32
-	peers []*peer
+	peers map[uint32]Peer
 
 	mu     sync.Mutex
 	config *Config
@@ -24,7 +24,9 @@ type raft struct {
 	lastHeartbeat time.Time
 }
 
-func NewRaft(id uint32, peers []*peer, config *Config, logger *zap.Logger) pb.RaftServer {
+var _ pb.RaftServer = (*raft)(nil)
+
+func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logger) *raft {
 	raftState := raftState{
 		state:       Follower,
 		currentTerm: 0,
@@ -86,12 +88,14 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	if req.GetTerm() > r.currentTerm {
 		r.toFollower(req.GetTerm())
 
-		r.logger.Info("increase term since receive a newer one")
+		r.logger.Info("increase term since receive a newer one", zap.Uint64("term", r.currentTerm))
 	}
 
 	// reject if already vote for another candidate
 	if r.votedFor != 0 && r.votedFor != req.GetCandidateId() {
-		r.logger.Info("reject since already vote for another candidate")
+		r.logger.Info("reject since already vote for another candidate",
+			zap.Uint64("term", r.currentTerm),
+			zap.Uint32("votedFor", r.votedFor))
 
 		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}, nil
 	}
@@ -112,7 +116,7 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}, nil
 }
 
-func (r *raft) run(ctx context.Context) {
+func (r *raft) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -212,7 +216,7 @@ func (r *raft) voteForSelf(grantedVotes *int) {
 }
 
 func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult) {
-	r.logger.Info("broadcast request vote")
+	r.logger.Info("broadcast request vote", zap.Uint64("term", r.currentTerm))
 
 	lastLogId, lastLogTerm := r.getLastLog()
 
@@ -223,17 +227,18 @@ func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult
 		LastLogTerm: lastLogTerm,
 	}
 
-	for _, peer := range r.peers {
+	for peerId, peer := range r.peers {
+		peerId := peerId
 		peer := peer
 
 		go func() {
 			resp, err := peer.RequestVote(ctx, req)
 			if err != nil {
-				r.logger.Error("fail to send RequestVote RPC", zap.Error(err), zap.Uint32("peer", peer.id))
+				r.logger.Error("fail to send RequestVote RPC", zap.Error(err), zap.Uint32("peer", peerId))
 				return
 			}
 
-			voteCh <- &voteResult{RequestVoteResponse: resp, peerId: peer.id}
+			voteCh <- &voteResult{RequestVoteResponse: resp, peerId: peerId}
 		}()
 	}
 }
@@ -260,7 +265,7 @@ func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded
 	if (*grantedVotes) >= votesNeeded {
 		r.state = Leader
 
-		r.logger.Info("election won", zap.Int("grantedVote", (*grantedVotes)))
+		r.logger.Info("election won", zap.Int("grantedVote", (*grantedVotes)), zap.Uint64("term", r.currentTerm))
 	}
 }
 
@@ -306,16 +311,17 @@ func (r *raft) broadcastHeartbeat(ctx context.Context, heartbeatCh chan *heartbe
 		Entries:        []*pb.Entry{},
 	}
 
-	for _, peer := range r.peers {
+	for peerId, peer := range r.peers {
+		peerId := peerId
 		peer := peer
 
 		go func() {
 			resp, err := peer.AppendEntries(ctx, req)
 			if err != nil {
-				r.logger.Error("fail to send AppendEntries RPC", zap.Error(err), zap.Uint32("peer", peer.id))
+				r.logger.Error("fail to send AppendEntries RPC", zap.Error(err), zap.Uint32("peer", peerId))
 			}
 
-			heartbeatCh <- &heartbeatResult{AppendEntriesResponse: resp, peerId: peer.id}
+			heartbeatCh <- &heartbeatResult{AppendEntriesResponse: resp, peerId: peerId}
 		}()
 	}
 }
