@@ -2,7 +2,6 @@ package raft
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	"github.com/justin0u0/raft/pb"
@@ -12,22 +11,24 @@ import (
 type raft struct {
 	pb.UnimplementedRaftServer
 
-	raftState
+	*raftState
 
 	id    uint32
 	peers map[uint32]Peer
 
-	mu     sync.Mutex
 	config *Config
 	logger *zap.Logger
 
 	lastHeartbeat time.Time
+
+	// rpcCh buffers incoming RPCs
+	rpcCh chan *rpc
 }
 
 var _ pb.RaftServer = (*raft)(nil)
 
 func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logger) *raft {
-	raftState := raftState{
+	raftState := &raftState{
 		state:       Follower,
 		currentTerm: 0,
 		votedFor:    0,
@@ -45,17 +46,13 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 		config:        config,
 		logger:        logger.With(zap.Uint32("id", id)),
 		lastHeartbeat: time.Now(),
+		rpcCh:         make(chan *rpc),
 	}
 }
 
-func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
-	// AppendEntries may changed raft state
-	// it is nesessary to protect code section where Raft state changed
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+func (r *raft) appendEntries(req *pb.AppendEntriesRequest, respCh chan<- *rpcResponse) {
 	if req.GetTerm() < r.currentTerm {
-		return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}, nil
+		respCh <- &rpcResponse{resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}}
 	}
 
 	r.lastHeartbeat = time.Now()
@@ -68,20 +65,15 @@ func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 		r.toFollower(req.GetTerm())
 	}
 
-	return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true}, nil
+	respCh <- &rpcResponse{resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true}}
 }
 
-func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
-	// RequestVote may changed raft state
-	// it is nesessary to protect code section where Raft state changed
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
+func (r *raft) requestVote(req *pb.RequestVoteRequest, respCh chan<- *rpcResponse) {
 	// reject if current term is older
 	if req.GetTerm() < r.currentTerm {
 		r.logger.Info("reject since current term is older")
 
-		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}, nil
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
 	// increase term if receive a newer one
@@ -97,7 +89,7 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 			zap.Uint64("term", r.currentTerm),
 			zap.Uint32("votedFor", r.votedFor))
 
-		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}, nil
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
 	lastLogId, lastLogTerm := r.getLastLog()
@@ -106,14 +98,14 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	if lastLogTerm > req.GetLastLogTerm() || (lastLogTerm == req.GetLastLogTerm() && lastLogId > req.GetLastLogId()) {
 		r.logger.Info("reject since last entry is more up-to-date")
 
-		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}, nil
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
-	r.votedFor = req.GetCandidateId()
+	r.voteFor(req.GetCandidateId(), false)
 	r.lastHeartbeat = time.Now()
 	r.logger.Info("vote for another candidate", zap.Uint32("votedFor", r.votedFor))
 
-	return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}, nil
+	respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}}
 }
 
 func (r *raft) Run(ctx context.Context) {
@@ -151,15 +143,15 @@ func (r *raft) runFollower(ctx context.Context) {
 			if time.Now().Sub(r.lastHeartbeat) > r.config.HeartbeatTimeout {
 				r.handleFollowerHeartbeatTimeout()
 			}
+
+		case rpc := <-r.rpcCh:
+			r.handleRPCRequest(rpc)
 		}
 	}
 }
 
 func (r *raft) handleFollowerHeartbeatTimeout() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.state = Candidate
+	r.toCandidate()
 
 	r.logger.Info("heartbeat timeout, change state from follower to candidate")
 }
@@ -200,16 +192,15 @@ func (r *raft) runCandidate(ctx context.Context) {
 		case <-timeoutCh:
 			r.logger.Info("election timeout eached, restarting election")
 			return
+
+		case rpc := <-r.rpcCh:
+			r.handleRPCRequest(rpc)
 		}
 	}
 }
 
 func (r *raft) voteForSelf(grantedVotes *int) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
-	r.currentTerm++
-	r.votedFor = r.id
+	r.voteFor(r.id, true)
 	(*grantedVotes)++
 
 	r.logger.Info("vote for self", zap.Uint64("term", r.currentTerm))
@@ -244,11 +235,6 @@ func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult
 }
 
 func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded int) {
-	// since all RPC response runs in another goroutine
-	// it is necessary to protect code section where raft state changed
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if vote.GetTerm() > r.currentTerm {
 		r.toFollower(vote.GetTerm())
 
@@ -263,7 +249,7 @@ func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded
 	}
 
 	if (*grantedVotes) >= votesNeeded {
-		r.state = Leader
+		r.toLeader()
 
 		r.logger.Info("election won", zap.Int("grantedVote", (*grantedVotes)), zap.Uint64("term", r.currentTerm))
 	}
@@ -291,6 +277,9 @@ func (r *raft) runLeader(ctx context.Context) {
 
 		case heartbeat := <-heartbeatCh:
 			r.handleHeartbeatResult(heartbeat)
+
+		case rpc := <-r.rpcCh:
+			r.handleRPCRequest(rpc)
 		}
 	}
 }
@@ -327,14 +316,9 @@ func (r *raft) broadcastHeartbeat(ctx context.Context, heartbeatCh chan *heartbe
 }
 
 func (r *raft) handleHeartbeatResult(heartbeat *heartbeatResult) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-
 	if heartbeat.GetTerm() > r.currentTerm {
 		r.toFollower(heartbeat.GetTerm())
 
 		r.logger.Info("receive new term on AppendEntries response, fallback to follower", zap.Uint32("peer", heartbeat.peerId))
-
-		return
 	}
 }

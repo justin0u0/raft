@@ -1,6 +1,8 @@
 package raft
 
 import (
+	"sync"
+
 	"github.com/justin0u0/raft/pb"
 )
 
@@ -44,6 +46,8 @@ type raftState struct {
 
 	nextIndex  map[uint32]int64
 	matchIndex map[uint32]int64
+
+	mu sync.Mutex
 }
 
 // getLastLog get last log id and last log term,
@@ -59,10 +63,39 @@ func (rs *raftState) getLastLog() (id, term uint64) {
 }
 
 func (rs *raftState) toFollower(term uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	rs.state = Follower
 
 	if rs.currentTerm < term {
 		rs.currentTerm = term
 		rs.votedFor = 0
 	}
+}
+
+func (rs *raftState) toCandidate() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.state = Candidate
+}
+
+func (rs *raftState) toLeader() {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.state = Leader
+}
+
+func (rs *raftState) voteFor(id uint32, voteForSelf bool) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	// if vote for self, increase current term
+	if voteForSelf {
+		rs.currentTerm++
+	}
+
+	rs.votedFor = id
 }
