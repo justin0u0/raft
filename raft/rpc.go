@@ -17,6 +17,10 @@ type rpc struct {
 	respCh chan<- *rpcResponse
 }
 
+func (r *rpc) respond(resp interface{}, err error) {
+	r.respCh <- &rpcResponse{resp: resp, err: err}
+}
+
 var (
 	errRPCTimeout           = errors.New("rpc timeout")
 	errResponseTypeMismatch = errors.New("response type mismatch")
@@ -70,10 +74,10 @@ func (r *raft) dispatchRPCRequest(ctx context.Context, req interface{}) (interfa
 func (r *raft) handleRPCRequest(rpc *rpc) {
 	switch req := rpc.req.(type) {
 	case *pb.AppendEntriesRequest:
-		r.appendEntries(req, rpc.respCh)
+		rpc.respond(r.appendEntries(req), nil)
 	case *pb.RequestVoteRequest:
-		r.requestVote(req, rpc.respCh)
+		rpc.respond(r.requestVote(req), nil)
 	default:
-		rpc.respCh <- &rpcResponse{err: errInvalidRPCType}
+		rpc.respond(nil, errInvalidRPCType)
 	}
 }
