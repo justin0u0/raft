@@ -158,6 +158,7 @@ func (c *cluster) checkSingleLeader() (uint32, uint64) {
 	var leaderTerm uint64
 
 	for _, raft := range c.rafts {
+		// lock raft state
 		raft.mu.Lock()
 		defer raft.mu.Unlock()
 
