@@ -44,14 +44,13 @@ type raftState struct {
 
 	// volatile state on leader
 
-	nextIndex  map[uint32]int64
-	matchIndex map[uint32]int64
+	nextIndex  map[uint32]uint64
+	matchIndex map[uint32]uint64
 
 	mu sync.Mutex
 }
 
-// getLastLog get last log id and last log term,
-// returns 0, 0 if none
+// getLastLog gets last log id and last log term and returns 0, 0 if not found
 func (rs *raftState) getLastLog() (id, term uint64) {
 	if len(rs.logs) == 0 {
 		return 0, 0
@@ -60,6 +59,51 @@ func (rs *raftState) getLastLog() (id, term uint64) {
 	log := rs.logs[len(rs.logs)-1]
 
 	return log.GetId(), log.GetTerm()
+}
+
+// getLog gets the log by the given log id and returns nil if not found
+func (rs *raftState) getLog(id uint64) *pb.Entry {
+	for i := len(rs.logs) - 1; i >= 0; i-- {
+		if log := rs.logs[i]; log.GetId() == id {
+			return log
+		}
+	}
+
+	return nil
+}
+
+// appendLogs appends logs to the raft state
+func (rs *raftState) appendLogs(logs []*pb.Entry) {
+	rs.logs = append(rs.logs, logs...)
+}
+
+// deleteLogs deletes all logs after the given log id
+func (rs *raftState) deleteLogs(id uint64) {
+	index := -1
+
+	// find the smallest log index that is greater then or equal to the given log id
+	for i := len(rs.logs) - 1; i >= 0; i-- {
+		if rs.logs[i].GetId() >= id {
+			index = i
+		}
+	}
+
+	// deletes all logs after that log
+	if index != -1 {
+		rs.logs = rs.logs[:index]
+	}
+}
+
+func (rs *raftState) applyLogs(applyCh chan<- *pb.Entry) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	for i := rs.lastApplied + 1; i <= rs.commitIndex; i++ {
+		log := rs.getLog(i)
+		applyCh <- log
+
+		rs.lastApplied = log.GetId()
+	}
 }
 
 func (rs *raftState) toFollower(term uint64) {
@@ -98,4 +142,11 @@ func (rs *raftState) voteFor(id uint32, voteForSelf bool) {
 	}
 
 	rs.votedFor = id
+}
+
+func (rs *raftState) setCommitIndex(index uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.commitIndex = index
 }

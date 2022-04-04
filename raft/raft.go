@@ -21,8 +21,10 @@ type raft struct {
 
 	lastHeartbeat time.Time
 
-	// rpcCh buffers incoming RPCs
+	// rpcCh stores incoming RPCs
 	rpcCh chan *rpc
+	// applyCh stores logs that can be applied
+	applyCh chan *pb.Entry
 }
 
 var _ pb.RaftServer = (*raft)(nil)
@@ -35,8 +37,8 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 		logs:        make([]*pb.Entry, 0),
 		commitIndex: 0,
 		lastApplied: 0,
-		nextIndex:   make(map[uint32]int64),
-		matchIndex:  make(map[uint32]int64),
+		nextIndex:   make(map[uint32]uint64),
+		matchIndex:  make(map[uint32]uint64),
 	}
 
 	return &raft{
@@ -47,22 +49,62 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 		logger:        logger.With(zap.Uint32("id", id)),
 		lastHeartbeat: time.Now(),
 		rpcCh:         make(chan *rpc),
+		applyCh:       make(chan *pb.Entry),
 	}
 }
 
 func (r *raft) appendEntries(req *pb.AppendEntriesRequest) *pb.AppendEntriesResponse {
 	if req.GetTerm() < r.currentTerm {
+		r.logger.Info("reject append entries since current term is older")
+
 		return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}
 	}
 
 	r.lastHeartbeat = time.Now()
 
-	if req.GetTerm() >= r.currentTerm {
-		if r.state == Candidate {
-			r.logger.Info("receive request from leader, fallback to follower")
+	// increase term if receive a newer one
+	if req.GetTerm() > r.currentTerm {
+		r.toFollower(req.GetTerm())
+		r.logger.Info("increase term since receive a newer one", zap.Uint64("term", r.currentTerm))
+	}
+
+	if req.GetTerm() == r.currentTerm && r.state != Follower {
+		r.toFollower(req.GetTerm())
+		r.logger.Info("receive request from leader, fallback to follower", zap.Uint64("term", r.currentTerm))
+	}
+
+	// verify the last log entry
+	prevLogId := req.GetPrevLogId()
+	prevLogTerm := req.GetPrevLogTerm()
+	if prevLogId != 0 && prevLogTerm != 0 {
+		log := r.getLog(prevLogId)
+
+		if prevLogTerm != log.GetTerm() {
+			r.logger.Info("the given previous log from leader is missing or mismatched",
+				zap.Uint64("leaderLogTerm", prevLogTerm),
+				zap.Uint64("currentLogTerm", log.GetTerm()))
+
+			return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}
+		}
+	}
+
+	if len(req.GetEntries()) != 0 {
+		// delete entries after previous log
+		r.deleteLogs(prevLogId)
+
+		// append new entries
+		r.appendLogs(req.GetEntries())
+	}
+
+	if req.GetLeaderCommitId() > r.commitIndex {
+		lastLogId, _ := r.getLastLog()
+		if req.GetLeaderCommitId() < lastLogId {
+			r.setCommitIndex(req.GetLeaderCommitId())
+		} else {
+			r.setCommitIndex(lastLogId)
 		}
 
-		r.toFollower(req.GetTerm())
+		go r.applyLogs(r.applyCh)
 	}
 
 	return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true}
@@ -71,7 +113,7 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest) *pb.AppendEntriesResp
 func (r *raft) requestVote(req *pb.RequestVoteRequest) *pb.RequestVoteResponse {
 	// reject if current term is older
 	if req.GetTerm() < r.currentTerm {
-		r.logger.Info("reject since current term is older")
+		r.logger.Info("reject request vote since current term is older")
 
 		return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}
 	}
@@ -127,6 +169,8 @@ func (r *raft) Run(ctx context.Context) {
 	}
 }
 
+// followers related
+
 func (r *raft) runFollower(ctx context.Context) {
 	r.logger.Info("running follower")
 
@@ -155,6 +199,8 @@ func (r *raft) handleFollowerHeartbeatTimeout() {
 
 	r.logger.Info("heartbeat timeout, change state from follower to candidate")
 }
+
+// candidates related
 
 type voteResult struct {
 	*pb.RequestVoteResponse
@@ -255,6 +301,8 @@ func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded
 	}
 }
 
+// leaders related
+
 type heartbeatResult struct {
 	*pb.AppendEntriesResponse
 	peerId uint32
@@ -264,6 +312,13 @@ func (r *raft) runLeader(ctx context.Context) {
 	timeoutCh := randomTimeout(r.config.HeartbeatInterval)
 
 	heartbeatCh := make(chan *heartbeatResult, len(r.peers))
+
+	// reset `nextIndex` and `matchIndex`
+	lastLogId, _ := r.getLastLog()
+	for peerId := range r.peers {
+		r.nextIndex[peerId] = lastLogId + 1
+		r.matchIndex[peerId] = 0
+	}
 
 	for r.state == Leader {
 		select {
