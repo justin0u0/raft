@@ -52,10 +52,7 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 
 func (r *raft) appendEntries(req *pb.AppendEntriesRequest, respCh chan<- *rpcResponse) {
 	if req.GetTerm() < r.currentTerm {
-		respCh <- &rpcResponse{
-			resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false},
-			err:  nil,
-		}
+		respCh <- &rpcResponse{resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}}
 	}
 
 	r.lastHeartbeat = time.Now()
@@ -68,10 +65,7 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest, respCh chan<- *rpcRes
 		r.toFollower(req.GetTerm())
 	}
 
-	respCh <- &rpcResponse{
-		resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true},
-		err:  nil,
-	}
+	respCh <- &rpcResponse{resp: &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true}}
 }
 
 func (r *raft) requestVote(req *pb.RequestVoteRequest, respCh chan<- *rpcResponse) {
@@ -79,10 +73,7 @@ func (r *raft) requestVote(req *pb.RequestVoteRequest, respCh chan<- *rpcRespons
 	if req.GetTerm() < r.currentTerm {
 		r.logger.Info("reject since current term is older")
 
-		respCh <- &rpcResponse{
-			resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false},
-			err:  nil,
-		}
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
 	// increase term if receive a newer one
@@ -98,10 +89,7 @@ func (r *raft) requestVote(req *pb.RequestVoteRequest, respCh chan<- *rpcRespons
 			zap.Uint64("term", r.currentTerm),
 			zap.Uint32("votedFor", r.votedFor))
 
-		respCh <- &rpcResponse{
-			resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false},
-			err:  nil,
-		}
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
 	lastLogId, lastLogTerm := r.getLastLog()
@@ -110,20 +98,14 @@ func (r *raft) requestVote(req *pb.RequestVoteRequest, respCh chan<- *rpcRespons
 	if lastLogTerm > req.GetLastLogTerm() || (lastLogTerm == req.GetLastLogTerm() && lastLogId > req.GetLastLogId()) {
 		r.logger.Info("reject since last entry is more up-to-date")
 
-		respCh <- &rpcResponse{
-			resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false},
-			err:  nil,
-		}
+		respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: false}}
 	}
 
 	r.voteFor(req.GetCandidateId(), false)
 	r.lastHeartbeat = time.Now()
 	r.logger.Info("vote for another candidate", zap.Uint32("votedFor", r.votedFor))
 
-	respCh <- &rpcResponse{
-		resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true},
-		err:  nil,
-	}
+	respCh <- &rpcResponse{resp: &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}}
 }
 
 func (r *raft) Run(ctx context.Context) {
@@ -338,7 +320,5 @@ func (r *raft) handleHeartbeatResult(heartbeat *heartbeatResult) {
 		r.toFollower(heartbeat.GetTerm())
 
 		r.logger.Info("receive new term on AppendEntries response, fallback to follower", zap.Uint32("peer", heartbeat.peerId))
-
-		return
 	}
 }
