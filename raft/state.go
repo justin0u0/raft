@@ -44,14 +44,13 @@ type raftState struct {
 
 	// volatile state on leader
 
-	nextIndex  map[uint32]int64
-	matchIndex map[uint32]int64
+	nextIndex  map[uint32]uint64
+	matchIndex map[uint32]uint64
 
 	mu sync.Mutex
 }
 
-// getLastLog get last log id and last log term,
-// returns 0, 0 if none
+// getLastLog gets last log id and last log term and returns zero-values if not found
 func (rs *raftState) getLastLog() (id, term uint64) {
 	if len(rs.logs) == 0 {
 		return 0, 0
@@ -60,6 +59,77 @@ func (rs *raftState) getLastLog() (id, term uint64) {
 	log := rs.logs[len(rs.logs)-1]
 
 	return log.GetId(), log.GetTerm()
+}
+
+// getLog gets the log by the given log id and returns nil if not found
+func (rs *raftState) getLog(id uint64) *pb.Entry {
+	logs := rs.getLogs(id)
+	if len(logs) != 0 {
+		return logs[0]
+	}
+
+	return nil
+}
+
+// getLogs gets all logs from the start id to the end and returns empty list if not found
+func (rs *raftState) getLogs(startId uint64) []*pb.Entry {
+	if len(rs.logs) == 0 {
+		return []*pb.Entry{}
+	}
+
+	lastLog := rs.logs[len(rs.logs)-1]
+	if lastLog.GetId() < startId {
+		return []*pb.Entry{}
+	}
+
+	logIdDiff := int(lastLog.GetId() - startId)
+
+	return rs.logs[len(rs.logs)-1-logIdDiff:]
+}
+
+// appendLogs appends logs to the raft state
+func (rs *raftState) appendLogs(logs []*pb.Entry) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.logs = append(rs.logs, logs...)
+}
+
+// deleteLogs deletes all logs after the given log id
+func (rs *raftState) deleteLogs(id uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	index := -1
+
+	// find the smallest log index that is greater then or equal to the given log id
+	for i := len(rs.logs) - 1; i >= 0; i-- {
+		if rs.logs[i].GetId() >= id {
+			index = i
+		}
+	}
+
+	// deletes all logs after that log
+	if index != -1 {
+		rs.logs = rs.logs[:index]
+	}
+}
+
+// applyLogs applies logs between (lastApplied, commitIndex]
+func (rs *raftState) applyLogs(applyCh chan<- *pb.Entry) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	logs := rs.getLogs(rs.lastApplied + 1)
+	for _, log := range logs {
+		if log.GetId() > rs.commitIndex {
+			break
+		}
+
+		applyCh <- log
+
+		rs.lastApplied = log.GetId()
+	}
 }
 
 func (rs *raftState) toFollower(term uint64) {
@@ -98,4 +168,19 @@ func (rs *raftState) voteFor(id uint32, voteForSelf bool) {
 	}
 
 	rs.votedFor = id
+}
+
+func (rs *raftState) setCommitIndex(index uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.commitIndex = index
+}
+
+func (rs *raftState) setNextAndMatchIndex(peerId uint32, nextIndex uint64, matchIndex uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.nextIndex[peerId] = nextIndex
+	rs.matchIndex[peerId] = matchIndex
 }

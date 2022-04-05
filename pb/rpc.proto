@@ -8,9 +8,9 @@ option go_package = "github.com/justin0u0/raft/pb";
 
 service Raft {
 	// external RPCs
+	rpc ApplyCommand(ApplyCommandRequest) returns (ApplyCommandResponse) {}
 
 	// internal RPCs
-
 	rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse) {}
 
 	rpc RequestVote(RequestVoteRequest) returns (RequestVoteResponse) {}
