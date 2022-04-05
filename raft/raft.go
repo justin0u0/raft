@@ -118,7 +118,7 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 			r.setCommitIndex(lastLogId)
 		}
 
-		r.logger.Info("update commit index", zap.Uint64("commitIndex", r.commitIndex))
+		r.logger.Info("update commit index from leader", zap.Uint64("commitIndex", r.commitIndex))
 		go r.applyLogs(r.applyCh)
 	}
 
@@ -387,40 +387,36 @@ func (r *raft) broadcastAppendEntries(ctx context.Context, appendEntriesResultCh
 }
 
 func (r *raft) handleAppendEntriesResult(result *appendEntriesResult) {
+	peerId := result.peerId
+	logger := r.logger.With(zap.Uint32("peer", peerId))
+
 	if result.GetTerm() > r.currentTerm {
 		r.toFollower(result.GetTerm())
-		r.logger.Info("receive new term on AppendEntries response, fallback to follower", zap.Uint32("peer", result.peerId))
+		logger.Info("receive new term on AppendEntries response, fallback to follower")
 
 		return
 	}
 
-	resp := result.AppendEntriesResponse
-	req := result.req
-	peerId := result.peerId
-	entries := req.GetEntries()
+	entries := result.req.GetEntries()
 
 	// request is not for heartbeat
 	if len(entries) != 0 {
-		if resp.Success {
+		if result.GetSuccess() {
 			// if successful, update `matchIndex` and `nextIndex` for the follower
-
 			matchIndex := entries[len(entries)-1].GetId()
 			nextIndex := matchIndex + 1
 			r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
 
-			r.logger.Info("append entries successfully, set next index and match index",
-				zap.Uint32("peer", peerId),
+			logger.Info("append entries successfully, set next index and match index",
 				zap.Uint64("nextIndex", nextIndex),
 				zap.Uint64("matchIndex", matchIndex))
 		} else {
 			// if failed, decrease `nextIndex` and retry
 			nextIndex := r.nextIndex[peerId] - 1
 			matchIndex := r.matchIndex[peerId]
-
 			r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
 
-			r.logger.Info("append entries failed, decrease next index",
-				zap.Uint32("peer", peerId),
+			logger.Info("append entries failed, decrease next index",
 				zap.Uint64("nextIndex", nextIndex),
 				zap.Uint64("matchIndex", matchIndex))
 		}
@@ -444,10 +440,8 @@ func (r *raft) handleAppendEntriesResult(result *appendEntriesResult) {
 
 		if replicas >= replicasNeeded {
 			r.setCommitIndex(log.GetId())
+			r.logger.Info("found new logs committed, apply new logs", zap.Uint64("commitIndex", r.commitIndex))
 
-			r.logger.Info("found new logs committed, apply new logs",
-				zap.Uint32("id", r.id),
-				zap.Uint64("commitIndex", r.commitIndex))
 			go r.applyLogs(r.applyCh)
 
 			break
