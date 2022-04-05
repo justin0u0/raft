@@ -106,6 +106,8 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 
 		// append new entries
 		r.appendLogs(req.GetEntries())
+
+		r.logger.Info("receive and append new entries")
 	}
 
 	if req.GetLeaderCommitId() > r.commitIndex {
@@ -116,6 +118,7 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 			r.setCommitIndex(lastLogId)
 		}
 
+		r.logger.Info("update commit index", zap.Uint64("commitIndex", r.commitIndex))
 		go r.applyLogs(r.applyCh)
 	}
 
