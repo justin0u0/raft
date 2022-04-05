@@ -10,6 +10,14 @@ message Entry {
 	bytes data = 3;
 }
 
+message ApplyCommandRequest {
+	bytes data = 1;
+}
+
+message ApplyCommandResponse {
+	Entry entry = 1;
+}
+
 message AppendEntriesRequest {
 	uint64 term = 1;
 	uint32 leader_id = 2;

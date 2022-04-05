@@ -50,7 +50,7 @@ type raftState struct {
 	mu sync.Mutex
 }
 
-// getLastLog gets last log id and last log term and returns 0, 0 if not found
+// getLastLog gets last log id and last log term and returns zero-values if not found
 func (rs *raftState) getLastLog() (id, term uint64) {
 	if len(rs.logs) == 0 {
 		return 0, 0
@@ -63,22 +63,43 @@ func (rs *raftState) getLastLog() (id, term uint64) {
 
 // getLog gets the log by the given log id and returns nil if not found
 func (rs *raftState) getLog(id uint64) *pb.Entry {
-	for i := len(rs.logs) - 1; i >= 0; i-- {
-		if log := rs.logs[i]; log.GetId() == id {
-			return log
-		}
+	logs := rs.getLogs(id)
+	if len(logs) != 0 {
+		return logs[0]
 	}
 
 	return nil
 }
 
+// getLogs gets all logs from the start id to the end and returns empty list if not found
+func (rs *raftState) getLogs(startId uint64) []*pb.Entry {
+	if len(rs.logs) == 0 {
+		return []*pb.Entry{}
+	}
+
+	lastLog := rs.logs[len(rs.logs)-1]
+	if lastLog.GetId() < startId {
+		return []*pb.Entry{}
+	}
+
+	logIdDiff := int(lastLog.GetId() - startId)
+
+	return rs.logs[len(rs.logs)-1-logIdDiff:]
+}
+
 // appendLogs appends logs to the raft state
 func (rs *raftState) appendLogs(logs []*pb.Entry) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	rs.logs = append(rs.logs, logs...)
 }
 
 // deleteLogs deletes all logs after the given log id
 func (rs *raftState) deleteLogs(id uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
 	index := -1
 
 	// find the smallest log index that is greater then or equal to the given log id
@@ -94,12 +115,17 @@ func (rs *raftState) deleteLogs(id uint64) {
 	}
 }
 
+// applyLogs applies logs between (lastApplied, commitIndex]
 func (rs *raftState) applyLogs(applyCh chan<- *pb.Entry) {
 	rs.mu.Lock()
 	defer rs.mu.Unlock()
 
-	for i := rs.lastApplied + 1; i <= rs.commitIndex; i++ {
-		log := rs.getLog(i)
+	logs := rs.getLogs(rs.lastApplied + 1)
+	for _, log := range logs {
+		if log.GetId() > rs.commitIndex {
+			break
+		}
+
 		applyCh <- log
 
 		rs.lastApplied = log.GetId()
@@ -149,4 +175,12 @@ func (rs *raftState) setCommitIndex(index uint64) {
 	defer rs.mu.Unlock()
 
 	rs.commitIndex = index
+}
+
+func (rs *raftState) setNextAndMatchIndex(peerId uint32, nextIndex uint64, matchIndex uint64) {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	rs.nextIndex[peerId] = nextIndex
+	rs.matchIndex[peerId] = matchIndex
 }

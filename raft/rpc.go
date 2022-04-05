@@ -25,7 +25,22 @@ var (
 	errRPCTimeout           = errors.New("rpc timeout")
 	errResponseTypeMismatch = errors.New("response type mismatch")
 	errInvalidRPCType       = errors.New("invalid rpc type")
+	errNotLeader            = errors.New("not leader")
 )
+
+func (r *raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
+	rpcResp, err := r.dispatchRPCRequest(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, ok := rpcResp.(*pb.ApplyCommandResponse)
+	if !ok {
+		return nil, errResponseTypeMismatch
+	}
+
+	return resp, nil
+}
 
 func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	rpcResp, err := r.dispatchRPCRequest(ctx, req)
@@ -73,10 +88,12 @@ func (r *raft) dispatchRPCRequest(ctx context.Context, req interface{}) (interfa
 
 func (r *raft) handleRPCRequest(rpc *rpc) {
 	switch req := rpc.req.(type) {
+	case *pb.ApplyCommandRequest:
+		rpc.respond(r.applyCommand(req))
 	case *pb.AppendEntriesRequest:
-		rpc.respond(r.appendEntries(req), nil)
+		rpc.respond(r.appendEntries(req))
 	case *pb.RequestVoteRequest:
-		rpc.respond(r.requestVote(req), nil)
+		rpc.respond(r.requestVote(req))
 	default:
 		rpc.respond(nil, errInvalidRPCType)
 	}
