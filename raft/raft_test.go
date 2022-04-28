@@ -119,9 +119,8 @@ func TestManyLogReplications(t *testing.T) {
 
 	numLogs := 3000
 
-	for i := 0; i < numLogs; i++ {
-		i := i
-		data := []byte("command" + strconv.Itoa(i+1))
+	for i := 1; i <= numLogs; i++ {
+		data := []byte("command " + strconv.Itoa(i))
 
 		go func() {
 			c.applyCommand(leaderId, leaderTerm, data)
