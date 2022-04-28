@@ -1,6 +1,8 @@
 package raft
 
 import (
+	"bytes"
+	"encoding/gob"
 	"sync"
 
 	"github.com/justin0u0/raft/pb"
@@ -48,6 +50,44 @@ type raftState struct {
 	matchIndex map[uint32]uint64
 
 	mu sync.Mutex
+}
+
+// persistence
+
+func (rs *raftState) saveRaftState(p Persister) error {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	buf := bytes.Buffer{}
+	enc := gob.NewEncoder(&buf)
+	enc.Encode(rs.currentTerm)
+	enc.Encode(rs.votedFor)
+	enc.Encode(rs.logs)
+
+	if err := p.SaveRaftState(buf.Bytes()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (rs *raftState) loadRaftState(p Persister) error {
+	rs.mu.Lock()
+	defer rs.mu.Unlock()
+
+	raftState, err := p.LoadRaftState()
+	if err != nil {
+		return err
+	}
+
+	if raftState != nil {
+		dec := gob.NewDecoder(bytes.NewBuffer(raftState))
+		dec.Decode(&rs.currentTerm)
+		dec.Decode(&rs.votedFor)
+		dec.Decode(&rs.logs)
+	}
+
+	return nil
 }
 
 // getLastLog gets last log id and last log term and returns zero-values if not found
@@ -110,7 +150,7 @@ func (rs *raftState) deleteLogs(id uint64) {
 
 	// deletes all logs after that log
 	if index != -1 {
-		rs.logs = rs.logs[:index]
+		rs.logs = rs.logs[:index+1]
 	}
 }
 

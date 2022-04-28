@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
-
-	"github.com/justin0u0/raft/pb"
 )
 
 func TestInitialElection(t *testing.T) {
@@ -91,7 +90,7 @@ func TestFollowerDisconnect(t *testing.T) {
 	}
 }
 
-func TestBasicLogReplication(t *testing.T) {
+func TestSingleLogReplication(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
@@ -105,10 +104,12 @@ func TestBasicLogReplication(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	checkLog(t, c.consumers[leaderId].getLog(1), leaderTerm, data)
+	for id := 1; id <= numNodes; id++ {
+		checkLog(t, c, uint32(id), 1, leaderTerm, nil)
+	}
 }
 
-func TestManyLogReplications(t *testing.T) {
+func TestManyLogsReplication(t *testing.T) {
 	numNodes := 3
 
 	c := newCluster(t, numNodes)
@@ -127,10 +128,95 @@ func TestManyLogReplications(t *testing.T) {
 		}()
 	}
 
+	time.Sleep(2 * time.Second)
+
+	for id := 1; id <= numNodes; id++ {
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+		}
+	}
+}
+
+func TestLogReplicationWithNodeFailure(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
 	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm := c.checkSingleLeader()
+
+	peerId := randomPeerId(leaderId, numNodes)
+	c.disconnectAll(peerId)
+
+	numLogs := 10
 
 	for i := 1; i <= numLogs; i++ {
-		checkLog(t, c.consumers[leaderId].getLog(uint64(i)), leaderTerm, nil)
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(leaderId, leaderTerm, data)
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+
+	for id := 1; id <= numNodes; id++ {
+		id := uint32(id)
+
+		if id == peerId {
+			continue
+		}
+
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+		}
+	}
+}
+
+func TestLogReplicationWithLeaderFailover(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
+	time.Sleep(1 * time.Second)
+	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
+
+	var wg sync.WaitGroup
+	numLogs := 100
+	for i := 1; i <= numLogs/2; i++ {
+		wg.Add(1)
+
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(oldLeaderId, oldLeaderTerm, data)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	c.disconnectAll(oldLeaderId)
+
+	time.Sleep(1 * time.Second)
+	newLeaderId, newLeaderTerm := c.checkSingleLeader()
+	c.connectAll(oldLeaderId)
+
+	for i := numLogs/2 + 1; i <= numLogs; i++ {
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(newLeaderId, newLeaderTerm, data)
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+	for id := numLogs / 2; id <= numNodes; id++ {
+		id := uint32(id)
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, uint32(id), uint64(i), newLeaderTerm, nil)
+		}
 	}
 }
 
@@ -144,15 +230,17 @@ func randomPeerId(serverId uint32, numNodes int) uint32 {
 	return peerId
 }
 
-func checkLog(t *testing.T, l *pb.Entry, term uint64, data []byte) {
+func checkLog(t *testing.T, c *cluster, nodeId uint32, logId uint64, term uint64, data []byte) {
+	l := c.consumers[nodeId].getLog(logId)
+
 	if l == nil {
-		t.Fatal("log is not commited")
+		t.Fatalf("log %d at node %d is not commited", logId, nodeId)
 	}
 
 	if l.GetTerm() != term {
-		t.Fatal("commited entry term mismatch")
+		t.Fatalf("commited log %d at node %d has term mismatched the leader term", logId, nodeId)
 	}
 	if data != nil && bytes.Compare(l.GetData(), data) != 0 {
-		t.Fatal("commited data mismatch given data")
+		t.Fatalf("commited log %d at node %d has data mismatched the given data", logId, nodeId)
 	}
 }

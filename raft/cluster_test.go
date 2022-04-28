@@ -60,6 +60,7 @@ type cluster struct {
 	servers     map[uint32]*grpc.Server
 	cancelFuncs map[uint32]context.CancelFunc
 	consumers   map[uint32]*consumer
+	persisters  map[uint32]Persister
 }
 
 func newCluster(t *testing.T, numNodes int) *cluster {
@@ -70,6 +71,7 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 		servers:     make(map[uint32]*grpc.Server),
 		cancelFuncs: make(map[uint32]context.CancelFunc),
 		consumers:   make(map[uint32]*consumer),
+		persisters:  make(map[uint32]Persister),
 	}
 
 	config := &Config{
@@ -87,37 +89,7 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 
 	for i := 0; i < numNodes; i++ {
 		id := uint32(i + 1)
-
-		lis, err := net.Listen("tcp", ":0")
-		if err != nil {
-			t.Fatal("fail to setup network", err)
-		}
-
-		c.listerers[id] = lis
-
-		// initialized peers without connection
-		peers := make(map[uint32]Peer)
-		for j := 0; j < numNodes; j++ {
-			peerId := uint32(j + 1)
-			if id != peerId {
-				peers[peerId] = &peer{}
-			}
-		}
-
-		persister := newPersister()
-
-		raft := NewRaft(id, peers, persister, config, logger)
-		c.rafts[id] = raft
-
-		grpcServer := grpc.NewServer()
-		pb.RegisterRaftServer(grpcServer, raft)
-		c.servers[id] = grpcServer
-
-		go func(lis net.Listener) {
-			if err := grpcServer.Serve(lis); err != nil {
-				log.Fatal("fail to serve gRPC server:", err)
-			}
-		}(c.listerers[id])
+		c.start(id, numNodes, config, logger)
 	}
 
 	for id := range c.rafts {
@@ -127,10 +99,7 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	for id, raft := range c.rafts {
 		ctx, cancel := context.WithCancel(context.Background())
 
-		consumer := newConsumer(raft)
-		c.consumers[id] = consumer
-
-		go consumer.start(ctx)
+		go c.consumers[id].start(ctx)
 		go raft.Run(ctx)
 
 		c.cancelFuncs[id] = cancel
@@ -141,6 +110,7 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	return &c
 }
 
+// shutdown shutdowns all raft servers
 func (c *cluster) shutdown() {
 	for id := range c.rafts {
 		c.servers[id].GracefulStop()
@@ -150,6 +120,53 @@ func (c *cluster) shutdown() {
 	}
 }
 
+func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *zap.Logger) {
+	lis, err := net.Listen("tcp", ":0")
+	if err != nil {
+		c.t.Fatal("fail to setup network", err)
+	}
+
+	c.listerers[serverId] = lis
+
+	// initialized peers without connection
+	peers := make(map[uint32]Peer)
+	for j := 0; j < numNodes; j++ {
+		peerId := uint32(j + 1)
+		if serverId != peerId {
+			peers[peerId] = &peer{}
+		}
+	}
+
+	persister := c.persisters[serverId]
+	if persister == nil {
+		persister = newPersister()
+	}
+
+	raft := NewRaft(serverId, peers, persister, config, logger)
+	c.rafts[serverId] = raft
+
+	consumer := newConsumer(raft)
+	c.consumers[serverId] = consumer
+
+	grpcServer := grpc.NewServer()
+	pb.RegisterRaftServer(grpcServer, raft)
+	c.servers[serverId] = grpcServer
+
+	go func(lis net.Listener) {
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatal("fail to serve gRPC server:", err)
+		}
+	}(c.listerers[serverId])
+}
+
+// fail fails a raft server
+func (c *cluster) fail(serverId uint32) {
+	c.servers[serverId].GracefulStop()
+	cancel := c.cancelFuncs[serverId]
+	cancel()
+}
+
+// connect connects server to peer
 func (c *cluster) connect(serverId, peerId uint32) {
 	peers := c.rafts[serverId].peers
 	peer := peers[peerId].(*peer)
@@ -166,6 +183,7 @@ func (c *cluster) connect(serverId, peerId uint32) {
 	}
 }
 
+// connect connects server to all peers
 func (c *cluster) connectAll(serverId uint32) {
 	peers := c.rafts[serverId].peers
 
@@ -174,7 +192,7 @@ func (c *cluster) connectAll(serverId uint32) {
 	}
 }
 
-// disconnect disconnect connection from server to peer
+// disconnect disconnects connection from server to peer
 func (c *cluster) disconnect(serverId, peerId uint32) {
 	peers := c.rafts[serverId].peers
 	peer := peers[peerId].(*peer)
@@ -188,7 +206,7 @@ func (c *cluster) disconnect(serverId, peerId uint32) {
 	}
 }
 
-// disconnect disconnect all connections from server to all its peers
+// disconnectAll disconnects all connections from server to all its peers
 func (c *cluster) disconnectAll(serverId uint32) {
 	peers := c.rafts[serverId].peers
 
@@ -197,7 +215,7 @@ func (c *cluster) disconnectAll(serverId uint32) {
 	}
 }
 
-// checkSingleLeader check if there is only one leader
+// checkSingleLeader checks if there is only one leader
 // and returns the leader's ID and the leader's term
 func (c *cluster) checkSingleLeader() (uint32, uint64) {
 	var leaderId uint32
