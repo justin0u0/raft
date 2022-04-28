@@ -228,6 +228,10 @@ func (r *Raft) Run(ctx context.Context) {
 	}
 }
 
+func (r *Raft) ApplyCh() <-chan *pb.Entry {
+	return r.applyCh
+}
+
 // follower related
 
 func (r *Raft) runFollower(ctx context.Context) {

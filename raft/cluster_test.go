@@ -36,7 +36,7 @@ func (c *consumer) start(ctx context.Context) {
 		case <-ctx.Done():
 			return
 
-		case e := <-c.raft.applyCh:
+		case e := <-c.raft.ApplyCh():
 			c.mu.Lock()
 			c.logs[e.Id] = e
 			c.mu.Unlock()
