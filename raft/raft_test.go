@@ -103,8 +103,8 @@ func TestBasicLogReplication(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	for id := uint32(1); id <= 3; id++ {
-		checkLog(t, c, id, 1, leaderTerm, nil)
+	for id := 1; id <= numNodes; id++ {
+		checkLog(t, c, uint32(id), 1, leaderTerm, nil)
 	}
 }
 
@@ -129,14 +129,48 @@ func TestManyLogReplications(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	for id := uint32(1); id <= 3; id++ {
+	for id := 1; id <= numNodes; id++ {
 		for i := 1; i <= numLogs; i++ {
-			checkLog(t, c, id, uint64(i), leaderTerm, nil)
+			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
 		}
 	}
 }
 
 func TestLogReplicationWithNodeFailure(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
+	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm := c.checkSingleLeader()
+
+	peerId := randomPeerId(leaderId, numNodes)
+	c.disconnectAll(peerId)
+
+	numLogs := 10
+
+	for i := 1; i <= numLogs; i++ {
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(leaderId, leaderTerm, data)
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+
+	for id := 1; id <= numNodes; id++ {
+		id := uint32(id)
+
+		if id == peerId {
+			continue
+		}
+
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+		}
+	}
 }
 
 func randomPeerId(serverId uint32, numNodes int) uint32 {
