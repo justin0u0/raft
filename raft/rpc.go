@@ -49,7 +49,7 @@ func (r *Raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 		return nil, err
 	}
 
-	if err := r.saveRaftState(); err != nil {
+	if err := r.saveRaftState(r.persister); err != nil {
 		return nil, fmt.Errorf("fail to save raft state: %w", err)
 	}
 
@@ -67,7 +67,7 @@ func (r *Raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 		return nil, err
 	}
 
-	if err := r.saveRaftState(); err != nil {
+	if err := r.saveRaftState(r.persister); err != nil {
 		return nil, fmt.Errorf("fail to save raft state: %w", err)
 	}
 

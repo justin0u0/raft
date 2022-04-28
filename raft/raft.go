@@ -1,9 +1,7 @@
 package raft
 
 import (
-	"bytes"
 	"context"
-	"encoding/gob"
 	"time"
 
 	"github.com/justin0u0/raft/pb"
@@ -113,7 +111,10 @@ func (r *Raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 		// append new entries
 		r.appendLogs(req.GetEntries())
 
-		r.logger.Info("receive and append new entries")
+		r.logger.Info("receive and append new entries",
+			zap.Int("newEntries", len(req.GetEntries())),
+			zap.Int("numberOfEntries", len(r.logs)),
+		)
 	}
 
 	if req.GetLeaderCommitId() > r.commitIndex {
@@ -170,42 +171,10 @@ func (r *Raft) requestVote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse,
 	return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}, nil
 }
 
-// persistence
-
-func (r *Raft) saveRaftState() error {
-	buf := bytes.Buffer{}
-	enc := gob.NewEncoder(&buf)
-	enc.Encode(r.raftState.currentTerm)
-	enc.Encode(r.raftState.votedFor)
-	enc.Encode(r.raftState.logs)
-
-	if err := r.persister.SaveRaftState(buf.Bytes()); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *Raft) loadRaftState() error {
-	raftState, err := r.persister.LoadRaftState()
-	if err != nil {
-		return err
-	}
-
-	if raftState != nil {
-		dec := gob.NewDecoder(bytes.NewBuffer(raftState))
-		dec.Decode(&r.raftState.currentTerm)
-		dec.Decode(&r.raftState.votedFor)
-		dec.Decode(&r.raftState.logs)
-	}
-
-	return nil
-}
-
 // raft main loop
 
 func (r *Raft) Run(ctx context.Context) {
-	if err := r.loadRaftState(); err != nil {
+	if err := r.loadRaftState(r.persister); err != nil {
 		r.logger.Error("fail to load raft state", zap.Error(err))
 		return
 	}

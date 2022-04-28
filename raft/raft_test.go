@@ -6,8 +6,6 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
-	"github.com/justin0u0/raft/pb"
 )
 
 func TestInitialElection(t *testing.T) {
@@ -105,7 +103,9 @@ func TestBasicLogReplication(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	checkLog(t, c.consumers[leaderId].getLog(1), leaderTerm, data)
+	for id := uint32(1); id <= 3; id++ {
+		checkLog(t, c, id, 1, leaderTerm, nil)
+	}
 }
 
 func TestManyLogReplications(t *testing.T) {
@@ -127,11 +127,16 @@ func TestManyLogReplications(t *testing.T) {
 		}()
 	}
 
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 
-	for i := 1; i <= numLogs; i++ {
-		checkLog(t, c.consumers[leaderId].getLog(uint64(i)), leaderTerm, nil)
+	for id := uint32(1); id <= 3; id++ {
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, id, uint64(i), leaderTerm, nil)
+		}
 	}
+}
+
+func TestLogReplicationWithNodeFailure(t *testing.T) {
 }
 
 func randomPeerId(serverId uint32, numNodes int) uint32 {
@@ -144,15 +149,17 @@ func randomPeerId(serverId uint32, numNodes int) uint32 {
 	return peerId
 }
 
-func checkLog(t *testing.T, l *pb.Entry, term uint64, data []byte) {
+func checkLog(t *testing.T, c *cluster, nodeId uint32, logId uint64, term uint64, data []byte) {
+	l := c.consumers[nodeId].getLog(logId)
+
 	if l == nil {
-		t.Fatal("log is not commited")
+		t.Fatalf("log %d at node %d is not commited", logId, nodeId)
 	}
 
 	if l.GetTerm() != term {
-		t.Fatal("commited entry term mismatch")
+		t.Fatalf("commited log %d at node %d has term mismatched the leader term", logId, nodeId)
 	}
 	if data != nil && bytes.Compare(l.GetData(), data) != 0 {
-		t.Fatal("commited data mismatch given data")
+		t.Fatalf("commited log %d at node %d has data mismatched the given data", logId, nodeId)
 	}
 }
