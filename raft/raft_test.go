@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math/rand"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 )
@@ -89,7 +90,7 @@ func TestFollowerDisconnect(t *testing.T) {
 	}
 }
 
-func TestBasicLogReplication(t *testing.T) {
+func TestSingleLogReplication(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
@@ -108,7 +109,7 @@ func TestBasicLogReplication(t *testing.T) {
 	}
 }
 
-func TestManyLogReplications(t *testing.T) {
+func TestManyLogsReplication(t *testing.T) {
 	numNodes := 3
 
 	c := newCluster(t, numNodes)
@@ -169,6 +170,52 @@ func TestLogReplicationWithNodeFailure(t *testing.T) {
 
 		for i := 1; i <= numLogs; i++ {
 			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+		}
+	}
+}
+
+func TestLogReplicationWithLeaderFailover(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
+	time.Sleep(1 * time.Second)
+	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
+
+	var wg sync.WaitGroup
+	numLogs := 100
+	for i := 1; i <= numLogs/2; i++ {
+		wg.Add(1)
+
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(oldLeaderId, oldLeaderTerm, data)
+			wg.Done()
+		}()
+	}
+
+	wg.Wait()
+	c.disconnectAll(oldLeaderId)
+
+	time.Sleep(1 * time.Second)
+	newLeaderId, newLeaderTerm := c.checkSingleLeader()
+	c.connectAll(oldLeaderId)
+
+	for i := numLogs/2 + 1; i <= numLogs; i++ {
+		data := []byte("command " + strconv.Itoa(i))
+
+		go func() {
+			c.applyCommand(newLeaderId, newLeaderTerm, data)
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+	for id := numLogs / 2; id <= numNodes; id++ {
+		id := uint32(id)
+		for i := 1; i <= numLogs; i++ {
+			checkLog(t, c, uint32(id), uint64(i), newLeaderTerm, nil)
 		}
 	}
 }
