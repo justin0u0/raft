@@ -1,7 +1,9 @@
 package raft
 
 import (
+	"bytes"
 	"context"
+	"encoding/gob"
 	"time"
 
 	"github.com/justin0u0/raft/pb"
@@ -12,6 +14,7 @@ type raft struct {
 	pb.UnimplementedRaftServer
 
 	*raftState
+	persister Persister
 
 	id    uint32
 	peers map[uint32]Peer
@@ -29,7 +32,7 @@ type raft struct {
 
 var _ pb.RaftServer = (*raft)(nil)
 
-func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logger) *raft {
+func NewRaft(id uint32, peers map[uint32]Peer, persister Persister, config *Config, logger *zap.Logger) *raft {
 	raftState := &raftState{
 		state:       Follower,
 		currentTerm: 0,
@@ -43,6 +46,7 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 
 	return &raft{
 		raftState:     raftState,
+		persister:     persister,
 		id:            id,
 		peers:         peers,
 		config:        config,
@@ -52,6 +56,8 @@ func NewRaft(id uint32, peers map[uint32]Peer, config *Config, logger *zap.Logge
 		applyCh:       make(chan *pb.Entry),
 	}
 }
+
+// RPC handlers
 
 func (r *raft) applyCommand(req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
 	if r.state != Leader {
@@ -164,7 +170,46 @@ func (r *raft) requestVote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse,
 	return &pb.RequestVoteResponse{Term: r.currentTerm, VoteGranted: true}, nil
 }
 
+// persistence
+
+func (r *raft) saveRaftState() error {
+	buf := bytes.Buffer{}
+	enc := gob.NewEncoder(&buf)
+	enc.Encode(r.raftState.currentTerm)
+	enc.Encode(r.raftState.votedFor)
+	enc.Encode(r.raftState.logs)
+
+	if err := r.persister.SaveRaftState(buf.Bytes()); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *raft) loadRaftState() error {
+	raftState, err := r.persister.LoadRaftState()
+	if err != nil {
+		return err
+	}
+
+	if raftState != nil {
+		dec := gob.NewDecoder(bytes.NewBuffer(raftState))
+		dec.Decode(&r.raftState.currentTerm)
+		dec.Decode(&r.raftState.votedFor)
+		dec.Decode(&r.raftState.logs)
+	}
+
+	return nil
+}
+
+// raft main loop
+
 func (r *raft) Run(ctx context.Context) {
+	if err := r.loadRaftState(); err != nil {
+		r.logger.Error("fail to load raft state", zap.Error(err))
+		return
+	}
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -183,7 +228,7 @@ func (r *raft) Run(ctx context.Context) {
 	}
 }
 
-// followers related
+// follower related
 
 func (r *raft) runFollower(ctx context.Context) {
 	r.logger.Info("running follower")
@@ -214,7 +259,7 @@ func (r *raft) handleFollowerHeartbeatTimeout() {
 	r.logger.Info("heartbeat timeout, change state from follower to candidate")
 }
 
-// candidates related
+// candidate related
 
 type voteResult struct {
 	*pb.RequestVoteResponse
@@ -313,7 +358,7 @@ func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded
 	}
 }
 
-// leaders related
+// leader related
 
 type appendEntriesResult struct {
 	*pb.AppendEntriesResponse

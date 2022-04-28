@@ -3,6 +3,7 @@ package raft
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/justin0u0/raft/pb"
 )
@@ -48,6 +49,10 @@ func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 		return nil, err
 	}
 
+	if err := r.saveRaftState(); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
+	}
+
 	resp, ok := rpcResp.(*pb.AppendEntriesResponse)
 	if !ok {
 		return nil, errResponseTypeMismatch
@@ -60,6 +65,10 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	rpcResp, err := r.dispatchRPCRequest(ctx, req)
 	if err != nil {
 		return nil, err
+	}
+
+	if err := r.saveRaftState(); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
 	}
 
 	resp, ok := rpcResp.(*pb.RequestVoteResponse)

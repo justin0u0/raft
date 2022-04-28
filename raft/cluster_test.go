@@ -104,7 +104,9 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 			}
 		}
 
-		raft := NewRaft(id, peers, config, logger)
+		persister := newPersister()
+
+		raft := NewRaft(id, peers, persister, config, logger)
 		c.rafts[id] = raft
 
 		grpcServer := grpc.NewServer()
