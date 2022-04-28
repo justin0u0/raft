@@ -1,9 +1,13 @@
 package raft
 
 import (
+	"bytes"
 	"math/rand"
+	"strconv"
 	"testing"
 	"time"
+
+	"github.com/justin0u0/raft/pb"
 )
 
 func TestInitialElection(t *testing.T) {
@@ -87,6 +91,50 @@ func TestFollowerDisconnect(t *testing.T) {
 	}
 }
 
+func TestBasicLogReplication(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
+	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm := c.checkSingleLeader()
+
+	data := []byte("command 1")
+	c.applyCommand(leaderId, leaderTerm, data)
+
+	time.Sleep(500 * time.Millisecond)
+
+	checkLog(t, c.consumers[leaderId].getLog(1), leaderTerm, data)
+}
+
+func TestManyLogReplications(t *testing.T) {
+	numNodes := 3
+
+	c := newCluster(t, numNodes)
+	defer c.shutdown()
+
+	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm := c.checkSingleLeader()
+
+	numLogs := 3000
+
+	for i := 0; i < numLogs; i++ {
+		i := i
+		data := []byte("command" + strconv.Itoa(i+1))
+
+		go func() {
+			c.applyCommand(leaderId, leaderTerm, data)
+		}()
+	}
+
+	time.Sleep(1 * time.Second)
+
+	for i := 1; i <= numLogs; i++ {
+		checkLog(t, c.consumers[leaderId].getLog(uint64(i)), leaderTerm, nil)
+	}
+}
+
 func randomPeerId(serverId uint32, numNodes int) uint32 {
 	peerId := serverId
 
@@ -95,4 +143,17 @@ func randomPeerId(serverId uint32, numNodes int) uint32 {
 	}
 
 	return peerId
+}
+
+func checkLog(t *testing.T, l *pb.Entry, term uint64, data []byte) {
+	if l == nil {
+		t.Fatal("log is not commited")
+	}
+
+	if l.GetTerm() != term {
+		t.Fatal("commited entry term mismatch")
+	}
+	if data != nil && bytes.Compare(l.GetData(), data) != 0 {
+		t.Fatal("commited data mismatch given data")
+	}
 }

@@ -1,10 +1,12 @@
 package raft
 
 import (
+	"bytes"
 	"context"
 	"log"
 	"net"
 	"runtime"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +14,42 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
+
+// consumer consumes logs that are commited from the applyCh
+type consumer struct {
+	raft *raft
+	logs map[uint64]*pb.Entry
+	mu   *sync.RWMutex
+}
+
+func newConsumer(r *raft) *consumer {
+	return &consumer{
+		raft: r,
+		logs: make(map[uint64]*pb.Entry),
+		mu:   &sync.RWMutex{},
+	}
+}
+
+func (c *consumer) start(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+
+		case e := <-c.raft.applyCh:
+			c.mu.Lock()
+			c.logs[e.Id] = e
+			c.mu.Unlock()
+		}
+	}
+}
+
+func (c *consumer) getLog(id uint64) *pb.Entry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.logs[id]
+}
 
 // cluster is a raft cluster for testing
 type cluster struct {
@@ -21,6 +59,7 @@ type cluster struct {
 	listerers   map[uint32]net.Listener
 	servers     map[uint32]*grpc.Server
 	cancelFuncs map[uint32]context.CancelFunc
+	consumers   map[uint32]*consumer
 }
 
 func newCluster(t *testing.T, numNodes int) *cluster {
@@ -30,6 +69,7 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 		listerers:   make(map[uint32]net.Listener),
 		servers:     make(map[uint32]*grpc.Server),
 		cancelFuncs: make(map[uint32]context.CancelFunc),
+		consumers:   make(map[uint32]*consumer),
 	}
 
 	config := &Config{
@@ -85,6 +125,10 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	for id, raft := range c.rafts {
 		ctx, cancel := context.WithCancel(context.Background())
 
+		consumer := newConsumer(raft)
+		c.consumers[id] = consumer
+
+		go consumer.start(ctx)
 		go raft.Run(ctx)
 
 		c.cancelFuncs[id] = cancel
@@ -177,6 +221,23 @@ func (c *cluster) checkSingleLeader() (uint32, uint64) {
 	}
 
 	return leaderId, leaderTerm
+}
+
+func (c *cluster) applyCommand(id uint32, term uint64, data []byte) {
+	ctx := context.Background()
+
+	resp, err := c.rafts[id].ApplyCommand(ctx, &pb.ApplyCommandRequest{Data: data})
+	if err != nil {
+		c.t.Fatal("fail to apply command:", err)
+	}
+
+	if bytes.Compare(resp.GetEntry().GetData(), data) != 0 {
+		c.t.Fatal("entry data mismatch given data")
+	}
+
+	if resp.GetEntry().GetTerm() != term {
+		c.t.Fatal("entry term mismatch")
+	}
 }
 
 func (c *cluster) warnNumberOfCPUs() {
