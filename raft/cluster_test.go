@@ -17,14 +17,14 @@ import (
 
 // consumer consumes logs that are commited from the applyCh
 type consumer struct {
-	raft *raft
+	raft *Raft
 	logs map[uint64]*pb.Entry
 	mu   *sync.RWMutex
 }
 
-func newConsumer(r *raft) *consumer {
+func newConsumer(raft *Raft) *consumer {
 	return &consumer{
-		raft: r,
+		raft: raft,
 		logs: make(map[uint64]*pb.Entry),
 		mu:   &sync.RWMutex{},
 	}
@@ -55,7 +55,7 @@ func (c *consumer) getLog(id uint64) *pb.Entry {
 type cluster struct {
 	t           *testing.T
 	logger      *zap.Logger
-	rafts       map[uint32]*raft
+	rafts       map[uint32]*Raft
 	listerers   map[uint32]net.Listener
 	servers     map[uint32]*grpc.Server
 	cancelFuncs map[uint32]context.CancelFunc
@@ -65,7 +65,7 @@ type cluster struct {
 func newCluster(t *testing.T, numNodes int) *cluster {
 	c := cluster{
 		t:           t,
-		rafts:       make(map[uint32]*raft),
+		rafts:       make(map[uint32]*Raft),
 		listerers:   make(map[uint32]net.Listener),
 		servers:     make(map[uint32]*grpc.Server),
 		cancelFuncs: make(map[uint32]context.CancelFunc),

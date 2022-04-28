@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-type raft struct {
+type Raft struct {
 	pb.UnimplementedRaftServer
 
 	*raftState
@@ -30,9 +30,9 @@ type raft struct {
 	applyCh chan *pb.Entry
 }
 
-var _ pb.RaftServer = (*raft)(nil)
+var _ pb.RaftServer = (*Raft)(nil)
 
-func NewRaft(id uint32, peers map[uint32]Peer, persister Persister, config *Config, logger *zap.Logger) *raft {
+func NewRaft(id uint32, peers map[uint32]Peer, persister Persister, config *Config, logger *zap.Logger) *Raft {
 	raftState := &raftState{
 		state:       Follower,
 		currentTerm: 0,
@@ -44,7 +44,7 @@ func NewRaft(id uint32, peers map[uint32]Peer, persister Persister, config *Conf
 		matchIndex:  make(map[uint32]uint64),
 	}
 
-	return &raft{
+	return &Raft{
 		raftState:     raftState,
 		persister:     persister,
 		id:            id,
@@ -59,7 +59,7 @@ func NewRaft(id uint32, peers map[uint32]Peer, persister Persister, config *Conf
 
 // RPC handlers
 
-func (r *raft) applyCommand(req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
+func (r *Raft) applyCommand(req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
 	if r.state != Leader {
 		return nil, errNotLeader
 	}
@@ -71,7 +71,7 @@ func (r *raft) applyCommand(req *pb.ApplyCommandRequest) (*pb.ApplyCommandRespon
 	return &pb.ApplyCommandResponse{Entry: e}, nil
 }
 
-func (r *raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+func (r *Raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	if req.GetTerm() < r.currentTerm {
 		r.logger.Info("reject append entries since current term is older")
 
@@ -131,7 +131,7 @@ func (r *raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 	return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: true}, nil
 }
 
-func (r *raft) requestVote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+func (r *Raft) requestVote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
 	// reject if current term is older
 	if req.GetTerm() < r.currentTerm {
 		r.logger.Info("reject request vote since current term is older")
@@ -172,7 +172,7 @@ func (r *raft) requestVote(req *pb.RequestVoteRequest) (*pb.RequestVoteResponse,
 
 // persistence
 
-func (r *raft) saveRaftState() error {
+func (r *Raft) saveRaftState() error {
 	buf := bytes.Buffer{}
 	enc := gob.NewEncoder(&buf)
 	enc.Encode(r.raftState.currentTerm)
@@ -186,7 +186,7 @@ func (r *raft) saveRaftState() error {
 	return nil
 }
 
-func (r *raft) loadRaftState() error {
+func (r *Raft) loadRaftState() error {
 	raftState, err := r.persister.LoadRaftState()
 	if err != nil {
 		return err
@@ -204,7 +204,7 @@ func (r *raft) loadRaftState() error {
 
 // raft main loop
 
-func (r *raft) Run(ctx context.Context) {
+func (r *Raft) Run(ctx context.Context) {
 	if err := r.loadRaftState(); err != nil {
 		r.logger.Error("fail to load raft state", zap.Error(err))
 		return
@@ -230,7 +230,7 @@ func (r *raft) Run(ctx context.Context) {
 
 // follower related
 
-func (r *raft) runFollower(ctx context.Context) {
+func (r *Raft) runFollower(ctx context.Context) {
 	r.logger.Info("running follower")
 
 	timeoutCh := randomTimeout(r.config.HeartbeatTimeout)
@@ -253,7 +253,7 @@ func (r *raft) runFollower(ctx context.Context) {
 	}
 }
 
-func (r *raft) handleFollowerHeartbeatTimeout() {
+func (r *Raft) handleFollowerHeartbeatTimeout() {
 	r.toCandidate()
 
 	r.logger.Info("heartbeat timeout, change state from follower to candidate")
@@ -266,7 +266,7 @@ type voteResult struct {
 	peerId uint32
 }
 
-func (r *raft) runCandidate(ctx context.Context) {
+func (r *Raft) runCandidate(ctx context.Context) {
 	r.logger.Info("running candidate")
 
 	grantedVotes := 0
@@ -304,14 +304,14 @@ func (r *raft) runCandidate(ctx context.Context) {
 	}
 }
 
-func (r *raft) voteForSelf(grantedVotes *int) {
+func (r *Raft) voteForSelf(grantedVotes *int) {
 	r.voteFor(r.id, true)
 	(*grantedVotes)++
 
 	r.logger.Info("vote for self", zap.Uint64("term", r.currentTerm))
 }
 
-func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult) {
+func (r *Raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult) {
 	r.logger.Info("broadcast request vote", zap.Uint64("term", r.currentTerm))
 
 	lastLogId, lastLogTerm := r.getLastLog()
@@ -339,7 +339,7 @@ func (r *raft) broadcastRequestVote(ctx context.Context, voteCh chan *voteResult
 	}
 }
 
-func (r *raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded int) {
+func (r *Raft) handleVoteResult(vote *voteResult, grantedVotes *int, votesNeeded int) {
 	if vote.GetTerm() > r.currentTerm {
 		r.toFollower(vote.GetTerm())
 		r.logger.Info("receive new term on RequestVote response, fallback to follower", zap.Uint32("peer", vote.peerId))
@@ -366,7 +366,7 @@ type appendEntriesResult struct {
 	peerId uint32
 }
 
-func (r *raft) runLeader(ctx context.Context) {
+func (r *Raft) runLeader(ctx context.Context) {
 	timeoutCh := randomTimeout(r.config.HeartbeatInterval)
 
 	appendEntriesResultCh := make(chan *appendEntriesResult, len(r.peers))
@@ -397,7 +397,7 @@ func (r *raft) runLeader(ctx context.Context) {
 	}
 }
 
-func (r *raft) broadcastAppendEntries(ctx context.Context, appendEntriesResultCh chan *appendEntriesResult) {
+func (r *Raft) broadcastAppendEntries(ctx context.Context, appendEntriesResultCh chan *appendEntriesResult) {
 	r.logger.Info("broadcast append entries")
 
 	for peerId, peer := range r.peers {
@@ -434,7 +434,7 @@ func (r *raft) broadcastAppendEntries(ctx context.Context, appendEntriesResultCh
 	}
 }
 
-func (r *raft) handleAppendEntriesResult(result *appendEntriesResult) {
+func (r *Raft) handleAppendEntriesResult(result *appendEntriesResult) {
 	peerId := result.peerId
 	logger := r.logger.With(zap.Uint32("peer", peerId))
 

@@ -29,7 +29,7 @@ var (
 	errNotLeader            = errors.New("not leader")
 )
 
-func (r *raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
+func (r *Raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*pb.ApplyCommandResponse, error) {
 	rpcResp, err := r.dispatchRPCRequest(ctx, req)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (r *raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*
 	return resp, nil
 }
 
-func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+func (r *Raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
 	rpcResp, err := r.dispatchRPCRequest(ctx, req)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (r *raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 	return resp, nil
 }
 
-func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
+func (r *Raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb.RequestVoteResponse, error) {
 	rpcResp, err := r.dispatchRPCRequest(ctx, req)
 	if err != nil {
 		return nil, err
@@ -79,7 +79,7 @@ func (r *raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 	return resp, nil
 }
 
-func (r *raft) dispatchRPCRequest(ctx context.Context, req interface{}) (interface{}, error) {
+func (r *Raft) dispatchRPCRequest(ctx context.Context, req interface{}) (interface{}, error) {
 	respCh := make(chan *rpcResponse, 1)
 	r.rpcCh <- &rpc{req: req, respCh: respCh}
 
@@ -95,7 +95,7 @@ func (r *raft) dispatchRPCRequest(ctx context.Context, req interface{}) (interfa
 	}
 }
 
-func (r *raft) handleRPCRequest(rpc *rpc) {
+func (r *Raft) handleRPCRequest(rpc *rpc) {
 	switch req := rpc.req.(type) {
 	case *pb.ApplyCommandRequest:
 		rpc.respond(r.applyCommand(req))
