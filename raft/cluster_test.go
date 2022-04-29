@@ -110,16 +110,6 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	return &c
 }
 
-// shutdown shutdowns all raft servers
-func (c *cluster) shutdown() {
-	for id := range c.rafts {
-		c.servers[id].GracefulStop()
-
-		cancel := c.cancelFuncs[id]
-		cancel()
-	}
-}
-
 func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *zap.Logger) {
 	lis, err := net.Listen("tcp", ":0")
 	if err != nil {
@@ -159,8 +149,15 @@ func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *z
 	}(c.listerers[serverId])
 }
 
-// fail fails a raft server
-func (c *cluster) fail(serverId uint32) {
+// stopAll stops all raft servers
+func (c *cluster) stopAll() {
+	for id := range c.rafts {
+		c.stop(id)
+	}
+}
+
+// stop stops a raft server
+func (c *cluster) stop(serverId uint32) {
 	c.servers[serverId].GracefulStop()
 	cancel := c.cancelFuncs[serverId]
 	cancel()

@@ -11,7 +11,7 @@ import (
 
 func TestInitialElection(t *testing.T) {
 	c := newCluster(t, 5)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 
@@ -20,7 +20,7 @@ func TestInitialElection(t *testing.T) {
 
 func TestElectionAfterLeaderDisconnect(t *testing.T) {
 	c := newCluster(t, 5)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 
@@ -43,7 +43,7 @@ func TestElectionAfterLeaderDisconnect(t *testing.T) {
 
 func TestElectionAfterLeaderDisconnectLoop(t *testing.T) {
 	c := newCluster(t, 5)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 
@@ -72,7 +72,7 @@ func TestFollowerDisconnect(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 
@@ -94,7 +94,7 @@ func TestSingleLogReplication(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 	leaderId, leaderTerm := c.checkSingleLeader()
@@ -113,7 +113,7 @@ func TestManyLogsReplication(t *testing.T) {
 	numNodes := 3
 
 	c := newCluster(t, numNodes)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 	leaderId, leaderTerm := c.checkSingleLeader()
@@ -137,11 +137,11 @@ func TestManyLogsReplication(t *testing.T) {
 	}
 }
 
-func TestLogReplicationWithNodeFailure(t *testing.T) {
+func TestLogReplicationWithFollowerFailure(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 	leaderId, leaderTerm := c.checkSingleLeader()
@@ -178,7 +178,7 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	numNodes := 5
 
 	c := newCluster(t, numNodes)
-	defer c.shutdown()
+	defer c.stopAll()
 
 	time.Sleep(1 * time.Second)
 	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
