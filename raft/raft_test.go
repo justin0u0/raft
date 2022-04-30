@@ -205,20 +205,24 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 
 	mustLogIds := make(chan uint64, numLogs)
 	for i := numLogs/2 + 1; i <= numLogs; i++ {
+		wg.Add(1)
 		data := []byte("command " + strconv.Itoa(i))
 
 		go func() {
 			mustLogIds <- c.applyCommand(newLeaderId, newLeaderTerm, data)
+			wg.Done()
 		}()
 	}
 
-	time.Sleep(1 * time.Second)
+	wg.Wait()
 	close(mustLogIds)
 
 	logIds := make([]uint64, 0, numLogs)
 	for logId := range mustLogIds {
 		logIds = append(logIds, logId)
 	}
+
+	time.Sleep(1 * time.Second)
 
 	for i := 1; i <= numNodes; i++ {
 		id := uint32(i)
