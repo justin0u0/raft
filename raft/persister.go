@@ -1,6 +1,8 @@
 package raft
 
-import "sync"
+import (
+	"sync"
+)
 
 type Persister interface {
 	SaveRaftState(raftState []byte) error
@@ -9,22 +11,21 @@ type Persister interface {
 
 type persister struct {
 	raftState []byte
-	mu        *sync.Mutex
+	mu        sync.Mutex
 }
 
 var _ Persister = (*persister)(nil)
 
 func newPersister() *persister {
-	return &persister{
-		mu: &sync.Mutex{},
-	}
+	return &persister{}
 }
 
 func (p *persister) SaveRaftState(raftState []byte) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	p.raftState = raftState
+	p.raftState = make([]byte, len(raftState))
+	copy(p.raftState, raftState)
 
 	return nil
 }

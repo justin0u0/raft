@@ -40,6 +40,10 @@ func (r *Raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*
 		return nil, errResponseTypeMismatch
 	}
 
+	if err := r.saveRaftState(r.persister); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
+	}
+
 	return resp, nil
 }
 
@@ -49,13 +53,13 @@ func (r *Raft) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) 
 		return nil, err
 	}
 
-	if err := r.saveRaftState(r.persister); err != nil {
-		return nil, fmt.Errorf("fail to save raft state: %w", err)
-	}
-
 	resp, ok := rpcResp.(*pb.AppendEntriesResponse)
 	if !ok {
 		return nil, errResponseTypeMismatch
+	}
+
+	if err := r.saveRaftState(r.persister); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
 	}
 
 	return resp, nil
@@ -67,13 +71,13 @@ func (r *Raft) RequestVote(ctx context.Context, req *pb.RequestVoteRequest) (*pb
 		return nil, err
 	}
 
-	if err := r.saveRaftState(r.persister); err != nil {
-		return nil, fmt.Errorf("fail to save raft state: %w", err)
-	}
-
 	resp, ok := rpcResp.(*pb.RequestVoteResponse)
 	if !ok {
 		return nil, errResponseTypeMismatch
+	}
+
+	if err := r.saveRaftState(r.persister); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
 	}
 
 	return resp, nil
