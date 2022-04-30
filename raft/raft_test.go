@@ -1,7 +1,6 @@
 package raft
 
 import (
-	"bytes"
 	"math/rand"
 	"strconv"
 	"sync"
@@ -105,7 +104,8 @@ func TestSingleLogReplication(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	for id := 1; id <= numNodes; id++ {
-		checkLog(t, c, uint32(id), 1, leaderTerm, nil)
+		id := uint32(id)
+		c.checkLog(id, 1, leaderTerm, nil)
 	}
 }
 
@@ -131,8 +131,9 @@ func TestManyLogsReplication(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	for id := 1; id <= numNodes; id++ {
+		id := uint32(id)
 		for i := 1; i <= numLogs; i++ {
-			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+			c.checkLog(id, uint64(i), leaderTerm, nil)
 		}
 	}
 }
@@ -169,7 +170,7 @@ func TestLogReplicationWithFollowerFailure(t *testing.T) {
 		}
 
 		for i := 1; i <= numLogs; i++ {
-			checkLog(t, c, uint32(id), uint64(i), leaderTerm, nil)
+			c.checkLog(id, uint64(i), leaderTerm, nil)
 		}
 	}
 }
@@ -227,7 +228,7 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	for i := 1; i <= numNodes; i++ {
 		id := uint32(i)
 		for _, logId := range logIds {
-			checkLog(t, c, uint32(id), logId, newLeaderTerm, nil)
+			c.checkLog(id, logId, newLeaderTerm, nil)
 		}
 	}
 }
@@ -269,14 +270,14 @@ func TestOnlyUpToDateCandidateWinLeaderElection(t *testing.T) {
 	for i := 1; i <= numNodes; i++ {
 		id := uint32(i)
 
-		checkLog(t, c, id, 1, oldLeaderTerm, data1)
+		c.checkLog(id, 1, oldLeaderTerm, data1)
 
 		if id == peerId1 || id == peerId2 {
 			if l := c.consumers[id].getLog(2); l != nil {
 				t.Fatalf("node %d is already stopped, should not receive the log", id)
 			}
 		} else {
-			checkLog(t, c, id, 2, oldLeaderTerm, data2)
+			c.checkLog(id, 2, oldLeaderTerm, data2)
 		}
 	}
 
@@ -310,8 +311,8 @@ func TestOnlyUpToDateCandidateWinLeaderElection(t *testing.T) {
 	for i := 1; i <= numNodes; i++ {
 		id := uint32(i)
 		if id != oldLeaderId {
-			checkLog(t, c, id, 1, oldLeaderTerm, data1)
-			checkLog(t, c, id, 2, oldLeaderTerm, data2)
+			c.checkLog(id, 1, oldLeaderTerm, data1)
+			c.checkLog(id, 2, oldLeaderTerm, data2)
 		}
 	}
 
@@ -329,8 +330,8 @@ func TestOnlyUpToDateCandidateWinLeaderElection(t *testing.T) {
 	if leaderId != newLeaderId || leaderTerm != newLeaderTerm {
 		t.Fatalf("leader come back should not affect the current leader")
 	}
-	checkLog(t, c, oldLeaderId, 1, oldLeaderTerm, data1)
-	checkLog(t, c, oldLeaderId, 2, oldLeaderTerm, data2)
+	c.checkLog(oldLeaderId, 1, oldLeaderTerm, data1)
+	c.checkLog(oldLeaderId, 2, oldLeaderTerm, data2)
 }
 
 func randomPeerId(serverId uint32, numNodes int) uint32 {
@@ -341,19 +342,4 @@ func randomPeerId(serverId uint32, numNodes int) uint32 {
 	}
 
 	return peerId
-}
-
-func checkLog(t *testing.T, c *cluster, nodeId uint32, logId uint64, term uint64, data []byte) {
-	l := c.consumers[nodeId].getLog(logId)
-
-	if l == nil {
-		t.Fatalf("log %d at node %d is not commited", logId, nodeId)
-	}
-
-	if l.GetTerm() != term {
-		t.Fatalf("commited log %d at node %d has term mismatched the leader term", logId, nodeId)
-	}
-	if data != nil && bytes.Compare(l.GetData(), data) != 0 {
-		t.Fatalf("commited log %d at node %d has data mismatched the given data", logId, nodeId)
-	}
 }

@@ -315,6 +315,21 @@ func (c *cluster) applyCommand(id uint32, term uint64, data []byte) uint64 {
 	return resp.Entry.GetId()
 }
 
+func (c *cluster) checkLog(serverId uint32, logId uint64, term uint64, data []byte) {
+	l := c.consumers[serverId].getLog(logId)
+
+	if l == nil {
+		c.t.Fatalf("log %d at server %d is not commited", logId, serverId)
+	}
+
+	if l.GetTerm() != term {
+		c.t.Fatalf("commited log %d at server %d has term mismatched the leader term", logId, serverId)
+	}
+	if data != nil && bytes.Compare(l.GetData(), data) != 0 {
+		c.t.Fatalf("commited log %d at server %d has data mismatched the given data", logId, serverId)
+	}
+}
+
 func (c *cluster) warnNumberOfCPUs() {
 	if runtime.NumCPU() < 2 {
 		c.logger.Warn("number of CPUs < 2, may not test race condition of Raft algorithm")
