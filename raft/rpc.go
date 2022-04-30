@@ -40,6 +40,10 @@ func (r *Raft) ApplyCommand(ctx context.Context, req *pb.ApplyCommandRequest) (*
 		return nil, errResponseTypeMismatch
 	}
 
+	if err := r.saveRaftState(r.persister); err != nil {
+		return nil, fmt.Errorf("fail to save raft state: %w", err)
+	}
+
 	return resp, nil
 }
 

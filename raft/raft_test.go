@@ -118,22 +118,26 @@ func TestManyLogsReplication(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	leaderId, leaderTerm := c.checkSingleLeader()
 
-	numLogs := 3000
+	numLogs := 2000
 
-	for i := 1; i <= numLogs; i++ {
-		data := []byte("command " + strconv.Itoa(i))
-
-		go func() {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for i := 1; i <= numLogs; i++ {
+			data := []byte("command " + strconv.Itoa(i))
 			c.applyCommand(leaderId, leaderTerm, data)
-		}()
-	}
+		}
+		wg.Done()
+	}()
 
+	wg.Wait()
 	time.Sleep(2 * time.Second)
 
 	for id := 1; id <= numNodes; id++ {
 		id := uint32(id)
 		for i := 1; i <= numLogs; i++ {
-			c.checkLog(id, uint64(i), leaderTerm, nil)
+			data := []byte("command " + strconv.Itoa(i))
+			c.checkLog(id, uint64(i), leaderTerm, data)
 		}
 	}
 }
@@ -184,18 +188,19 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
 
+	numLogs := 2000
+
 	var wg sync.WaitGroup
-	numLogs := 5000
-	for i := 1; i <= numLogs/2; i++ {
-		wg.Add(1)
+	wg.Add(1)
 
-		data := []byte("command " + strconv.Itoa(i))
-
-		go func() {
+	go func() {
+		for i := 1; i <= numLogs/2; i++ {
+			data := []byte("command " + strconv.Itoa(i))
 			c.applyCommand(oldLeaderId, oldLeaderTerm, data)
-			wg.Done()
-		}()
-	}
+		}
+
+		wg.Done()
+	}()
 
 	wg.Wait()
 	c.disconnectAll(oldLeaderId)
@@ -205,15 +210,15 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	c.connectAll(oldLeaderId)
 
 	mustLogIds := make(chan uint64, numLogs)
-	for i := numLogs/2 + 1; i <= numLogs; i++ {
-		wg.Add(1)
-		data := []byte("command " + strconv.Itoa(i))
-
-		go func() {
+	wg.Add(1)
+	go func() {
+		for i := numLogs/2 + 1; i <= numLogs; i++ {
+			data := []byte("command " + strconv.Itoa(i))
 			mustLogIds <- c.applyCommand(newLeaderId, newLeaderTerm, data)
-			wg.Done()
-		}()
-	}
+		}
+
+		wg.Done()
+	}()
 
 	wg.Wait()
 	close(mustLogIds)
@@ -332,6 +337,96 @@ func TestOnlyUpToDateCandidateWinLeaderElection(t *testing.T) {
 	}
 	c.checkLog(oldLeaderId, 1, oldLeaderTerm, data1)
 	c.checkLog(oldLeaderId, 2, oldLeaderTerm, data2)
+}
+
+func TestCannotCommitLogIfTermMismatch(t *testing.T) {
+	// note that the test is explained in the Raft paper figure 8
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.stopAll()
+
+	time.Sleep(1 * time.Second)
+	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
+
+	// log 1 are replicated on all followers
+	data1 := []byte("command 1")
+	c.applyCommand(oldLeaderId, oldLeaderTerm, data1)
+	time.Sleep(500 * time.Millisecond)
+
+	// log 2 is replicated on no follower
+	c.disconnectAll(oldLeaderId)
+	data2 := []byte("command 2")
+	log2Id := c.applyCommand(oldLeaderId, oldLeaderTerm, data2)
+
+	time.Sleep(1 * time.Second)
+	newLeaderId, newLeaderTerm := c.checkSingleLeader()
+	if newLeaderId == oldLeaderId {
+		t.Fatalf("invalid leader, node %d already stop", oldLeaderId)
+	}
+	if newLeaderTerm <= oldLeaderTerm {
+		t.Fatalf("new leader %d should have term %d greater than the old term %d", newLeaderId, newLeaderTerm, oldLeaderTerm)
+	}
+
+	// old leader is back from the network partition
+	c.connectAll(oldLeaderId)
+	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm := c.checkSingleLeader()
+	if newLeaderId != leaderId || newLeaderTerm != leaderTerm {
+		t.Fatal("new leader should not be affected when the old leader com")
+	}
+
+	// we disconnect all outgoing RPCs to all servers except the old leader
+	// thus forces the old leader to become the next leader
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		if id != oldLeaderId {
+			c.disconnectAll(id)
+		}
+	}
+
+	time.Sleep(1 * time.Second)
+	leaderId, leaderTerm = c.checkSingleLeader()
+	if leaderId != oldLeaderId {
+		t.Fatal("leader should go back to the old leader after our manually operation")
+	}
+	if leaderTerm <= newLeaderTerm {
+		t.Fatalf("the old leader should have term %d greater than the old term", newLeaderTerm)
+	}
+
+	// resume all connections
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		if id != oldLeaderId {
+			c.connectAll(id)
+		}
+	}
+
+	// log 2 should be replicated to all servers now but cannot commit since the log does not match current term
+	for id, raft := range c.rafts {
+		raft.mu.Lock()
+		if raft.getLog(log2Id) == nil {
+			t.Fatalf("log 2 does not replicated on server %d", raft.id)
+		}
+		raft.mu.Unlock()
+
+		if c.consumers[id].getLog(log2Id) != nil {
+			t.Fatalf("log 2 is committed on server %d", raft.id)
+		}
+	}
+
+	// log 3 is replicated on all servers
+	// then all logs are committed
+	data3 := []byte("command 3")
+	c.applyCommand(leaderId, leaderTerm, data3)
+
+	time.Sleep(500 * time.Millisecond)
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		c.checkLog(id, 1, oldLeaderTerm, data1)
+		c.checkLog(id, 2, oldLeaderTerm, data2)
+		c.checkLog(id, 3, leaderTerm, data3)
+	}
 }
 
 func randomPeerId(serverId uint32, numNodes int) uint32 {
