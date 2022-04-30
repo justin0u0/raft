@@ -97,8 +97,9 @@ func (r *Raft) appendEntries(req *pb.AppendEntriesRequest) (*pb.AppendEntriesRes
 
 		if prevLogTerm != log.GetTerm() {
 			r.logger.Info("the given previous log from leader is missing or mismatched",
-				zap.Uint64("leaderLogTerm", prevLogTerm),
-				zap.Uint64("currentLogTerm", log.GetTerm()))
+				zap.Uint64("prevLogId", prevLogId),
+				zap.Uint64("prevLogTerm", prevLogTerm),
+				zap.Uint64("logTerm", log.GetTerm()))
 
 			return &pb.AppendEntriesResponse{Term: r.currentTerm, Success: false}, nil
 		}
@@ -179,9 +180,15 @@ func (r *Raft) Run(ctx context.Context) {
 		return
 	}
 
+	r.logger.Info("starting raft",
+		zap.Uint64("term", r.currentTerm),
+		zap.Uint32("votedFor", r.votedFor),
+		zap.Int("logs", len(r.logs)))
+
 	for {
 		select {
 		case <-ctx.Done():
+			r.logger.Info("raft server stopped gracefully")
 			return
 		default:
 		}
@@ -392,10 +399,14 @@ func (r *Raft) broadcastAppendEntries(ctx context.Context, appendEntriesResultCh
 			req.PrevLogTerm = prevLog.GetTerm()
 		}
 
+		// r.logger.Debug("send append entries", zap.Uint32("peer", peerId), zap.Any("request", req), zap.Int("entries", len(entries)))
+
 		go func() {
 			resp, err := peer.AppendEntries(ctx, req)
 			if err != nil {
 				r.logger.Error("fail to send AppendEntries RPC", zap.Error(err), zap.Uint32("peer", peerId))
+				// connection issue, should not be handled
+				return
 			}
 
 			appendEntriesResultCh <- &appendEntriesResult{
@@ -420,27 +431,24 @@ func (r *Raft) handleAppendEntriesResult(result *appendEntriesResult) {
 
 	entries := result.req.GetEntries()
 
-	// request is not for heartbeat
-	if len(entries) != 0 {
-		if result.GetSuccess() {
-			// if successful, update `matchIndex` and `nextIndex` for the follower
-			matchIndex := entries[len(entries)-1].GetId()
-			nextIndex := matchIndex + 1
-			r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
+	if !result.GetSuccess() {
+		// if failed, decrease `nextIndex` and retry
+		nextIndex := r.nextIndex[peerId] - 1
+		matchIndex := r.matchIndex[peerId]
+		r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
 
-			logger.Info("append entries successfully, set next index and match index",
-				zap.Uint64("nextIndex", nextIndex),
-				zap.Uint64("matchIndex", matchIndex))
-		} else {
-			// if failed, decrease `nextIndex` and retry
-			nextIndex := r.nextIndex[peerId] - 1
-			matchIndex := r.matchIndex[peerId]
-			r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
+		logger.Info("append entries failed, decrease next index",
+			zap.Uint64("nextIndex", nextIndex),
+			zap.Uint64("matchIndex", matchIndex))
+	} else if len(entries) != 0 {
+		// if successful and with log entries, update `matchIndex` and `nextIndex` for the follower
+		matchIndex := entries[len(entries)-1].GetId()
+		nextIndex := matchIndex + 1
+		r.setNextAndMatchIndex(peerId, nextIndex, matchIndex)
 
-			logger.Info("append entries failed, decrease next index",
-				zap.Uint64("nextIndex", nextIndex),
-				zap.Uint64("matchIndex", matchIndex))
-		}
+		logger.Info("append entries successfully, set next index and match index",
+			zap.Uint64("nextIndex", nextIndex),
+			zap.Uint64("matchIndex", matchIndex))
 	}
 
 	replicasNeeded := (len(r.peers)+1)/2 + 1

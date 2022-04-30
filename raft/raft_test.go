@@ -184,7 +184,7 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
 
 	var wg sync.WaitGroup
-	numLogs := 100
+	numLogs := 5000
 	for i := 1; i <= numLogs/2; i++ {
 		wg.Add(1)
 
@@ -203,21 +203,130 @@ func TestLogReplicationWithLeaderFailover(t *testing.T) {
 	newLeaderId, newLeaderTerm := c.checkSingleLeader()
 	c.connectAll(oldLeaderId)
 
+	mustLogIds := make(chan uint64, numLogs)
 	for i := numLogs/2 + 1; i <= numLogs; i++ {
 		data := []byte("command " + strconv.Itoa(i))
 
 		go func() {
-			c.applyCommand(newLeaderId, newLeaderTerm, data)
+			mustLogIds <- c.applyCommand(newLeaderId, newLeaderTerm, data)
 		}()
 	}
 
 	time.Sleep(1 * time.Second)
-	for id := numLogs / 2; id <= numNodes; id++ {
-		id := uint32(id)
-		for i := 1; i <= numLogs; i++ {
-			checkLog(t, c, uint32(id), uint64(i), newLeaderTerm, nil)
+	close(mustLogIds)
+
+	logIds := make([]uint64, 0, numLogs)
+	for logId := range mustLogIds {
+		logIds = append(logIds, logId)
+	}
+
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		for _, logId := range logIds {
+			checkLog(t, c, uint32(id), logId, newLeaderTerm, nil)
 		}
 	}
+}
+
+func TestOnlyUpToDateCandidateWinLeaderElection(t *testing.T) {
+	numNodes := 5
+
+	c := newCluster(t, numNodes)
+	defer c.stopAll()
+
+	time.Sleep(1 * time.Second)
+	oldLeaderId, oldLeaderTerm := c.checkSingleLeader()
+
+	// log 1 are replicated on all followers
+	data1 := []byte("command 1")
+	c.applyCommand(oldLeaderId, oldLeaderTerm, data1)
+	time.Sleep(500 * time.Millisecond)
+
+	peerId1 := randomPeerId(oldLeaderId, numNodes)
+	peerId2 := peerId1
+	for peerId2 == peerId1 {
+		peerId2 = randomPeerId(oldLeaderId, numNodes)
+	}
+
+	// stop 2 followers
+	c.stop(peerId1)
+	c.stop(peerId2)
+
+	// log 2 are not replicated on peerId1 and peerId2
+	data2 := []byte("command 2")
+	c.applyCommand(oldLeaderId, oldLeaderTerm, data2)
+
+	time.Sleep(1 * time.Second)
+	// leader failover
+	c.stop(oldLeaderId)
+
+	// log 1 are replicated on all followers,
+	// log 2 are replicated on all followers except peerId1 and peerId2
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+
+		checkLog(t, c, id, 1, oldLeaderTerm, data1)
+
+		if id == peerId1 || id == peerId2 {
+			if l := c.consumers[id].getLog(2); l != nil {
+				t.Fatalf("node %d is already stopped, should not receive the log", id)
+			}
+		} else {
+			checkLog(t, c, id, 2, oldLeaderTerm, data2)
+		}
+	}
+
+	// restart the 2 followers
+	c.initialize(peerId1)
+	c.initialize(peerId2)
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		if id != oldLeaderId {
+			c.connectAll(id)
+		}
+	}
+	c.start(peerId1)
+	c.start(peerId2)
+
+	// new leader should not be the 2 followers that are stopped before
+	time.Sleep(1 * time.Second)
+	newLeaderId, newLeaderTerm := c.getCurrentLeader()
+
+	if newLeaderId == oldLeaderId {
+		t.Fatalf("invalid leader, node %d already stop", oldLeaderId)
+	}
+	if newLeaderId == peerId1 || newLeaderId == peerId2 {
+		t.Fatalf("invalid leader, node %d does not contain up-to-date logs", newLeaderId)
+	}
+	if newLeaderTerm <= oldLeaderTerm {
+		t.Fatalf("new leader %d should have term %d greater than the old term %d", newLeaderId, newLeaderTerm, oldLeaderTerm)
+	}
+
+	// log 2 are finally replicated on the 2 followers that are stopped before
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		if id != oldLeaderId {
+			checkLog(t, c, id, 1, oldLeaderTerm, data1)
+			checkLog(t, c, id, 2, oldLeaderTerm, data2)
+		}
+	}
+
+	// restart old leader
+	c.initialize(oldLeaderId)
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		c.connectAll(id)
+	}
+	c.start(oldLeaderId)
+
+	time.Sleep(500 * time.Millisecond)
+
+	leaderId, leaderTerm := c.checkSingleLeader()
+	if leaderId != newLeaderId || leaderTerm != newLeaderTerm {
+		t.Fatalf("leader come back should not affect the current leader")
+	}
+	checkLog(t, c, oldLeaderId, 1, oldLeaderTerm, data1)
+	checkLog(t, c, oldLeaderId, 2, oldLeaderTerm, data2)
 }
 
 func randomPeerId(serverId uint32, numNodes int) uint32 {

@@ -54,6 +54,7 @@ func (c *consumer) getLog(id uint64) *pb.Entry {
 // cluster is a raft cluster for testing
 type cluster struct {
 	t           *testing.T
+	numNodes    int
 	logger      *zap.Logger
 	rafts       map[uint32]*Raft
 	listerers   map[uint32]net.Listener
@@ -66,18 +67,13 @@ type cluster struct {
 func newCluster(t *testing.T, numNodes int) *cluster {
 	c := cluster{
 		t:           t,
+		numNodes:    numNodes,
 		rafts:       make(map[uint32]*Raft),
 		listerers:   make(map[uint32]net.Listener),
 		servers:     make(map[uint32]*grpc.Server),
 		cancelFuncs: make(map[uint32]context.CancelFunc),
 		consumers:   make(map[uint32]*consumer),
 		persisters:  make(map[uint32]Persister),
-	}
-
-	config := &Config{
-		HeartbeatTimeout:  150 * time.Millisecond,
-		ElectionTimeout:   150 * time.Millisecond,
-		HeartbeatInterval: 50 * time.Millisecond,
 	}
 
 	logger, err := zap.NewDevelopment()
@@ -87,22 +83,17 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 
 	c.logger = logger
 
-	for i := 0; i < numNodes; i++ {
-		id := uint32(i + 1)
-		c.start(id, numNodes, config, logger)
+	for i := 1; i <= numNodes; i++ {
+		id := uint32(i)
+		c.initialize(id)
 	}
 
 	for id := range c.rafts {
 		c.connectAll(id)
 	}
 
-	for id, raft := range c.rafts {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		go c.consumers[id].start(ctx)
-		go raft.Run(ctx)
-
-		c.cancelFuncs[id] = cancel
+	for id := range c.rafts {
+		c.start(id)
 	}
 
 	c.warnNumberOfCPUs()
@@ -110,18 +101,24 @@ func newCluster(t *testing.T, numNodes int) *cluster {
 	return &c
 }
 
-func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *zap.Logger) {
+// initialize initializes raft and the raft RPC server
+func (c *cluster) initialize(serverId uint32) {
+	c.logger.Debug("initializing raft", zap.Uint32("id", serverId))
+
 	lis, err := net.Listen("tcp", ":0")
 	if err != nil {
 		c.t.Fatal("fail to setup network", err)
 	}
 
 	c.listerers[serverId] = lis
+	c.logger.Debug("setup listner",
+		zap.Uint32("id", serverId),
+		zap.String("addr", c.listerers[serverId].Addr().String()))
 
 	// initialized peers without connection
 	peers := make(map[uint32]Peer)
-	for j := 0; j < numNodes; j++ {
-		peerId := uint32(j + 1)
+	for i := 1; i <= c.numNodes; i++ {
+		peerId := uint32(i)
 		if serverId != peerId {
 			peers[peerId] = &peer{}
 		}
@@ -130,9 +127,16 @@ func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *z
 	persister := c.persisters[serverId]
 	if persister == nil {
 		persister = newPersister()
+		c.persisters[serverId] = persister
 	}
 
-	raft := NewRaft(serverId, peers, persister, config, logger)
+	config := &Config{
+		HeartbeatTimeout:  150 * time.Millisecond,
+		ElectionTimeout:   150 * time.Millisecond,
+		HeartbeatInterval: 50 * time.Millisecond,
+	}
+
+	raft := NewRaft(serverId, peers, persister, config, c.logger)
 	c.rafts[serverId] = raft
 
 	consumer := newConsumer(raft)
@@ -149,6 +153,22 @@ func (c *cluster) start(serverId uint32, numNodes int, config *Config, logger *z
 	}(c.listerers[serverId])
 }
 
+// start starts raft main loop and consumer loop without connection
+//
+// Note that this function must be called after all peer connections are established
+func (c *cluster) start(serverId uint32) {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	raft := c.rafts[serverId]
+	consumer := c.consumers[serverId]
+	consumer.raft = raft
+
+	go consumer.start(ctx)
+	go raft.Run(ctx)
+
+	c.cancelFuncs[serverId] = cancel
+}
+
 // stopAll stops all raft servers
 func (c *cluster) stopAll() {
 	for id := range c.rafts {
@@ -158,9 +178,27 @@ func (c *cluster) stopAll() {
 
 // stop stops a raft server
 func (c *cluster) stop(serverId uint32) {
+	if c.servers[serverId] == nil {
+		return
+	}
+
 	c.servers[serverId].GracefulStop()
 	cancel := c.cancelFuncs[serverId]
 	cancel()
+
+	c.cancelFuncs[serverId] = nil
+	c.rafts[serverId] = nil
+	delete(c.rafts, serverId)
+	c.servers[serverId] = nil
+}
+
+// connect connects server to all peers
+func (c *cluster) connectAll(serverId uint32) {
+	peers := c.rafts[serverId].peers
+
+	for peerId := range peers {
+		c.connect(serverId, peerId)
+	}
 }
 
 // connect connects server to peer
@@ -177,15 +215,6 @@ func (c *cluster) connect(serverId, peerId uint32) {
 
 	if err := peer.dial(addr, grpc.WithInsecure()); err != nil {
 		c.t.Fatal("fail to connect to peer:", err)
-	}
-}
-
-// connect connects server to all peers
-func (c *cluster) connectAll(serverId uint32) {
-	peers := c.rafts[serverId].peers
-
-	for peerId := range peers {
-		c.connect(serverId, peerId)
 	}
 }
 
@@ -225,8 +254,7 @@ func (c *cluster) checkSingleLeader() (uint32, uint64) {
 
 		if raft.state == Leader {
 			if leaderId == 0 {
-				leaderId = raft.id
-				leaderTerm = raft.currentTerm
+				leaderId, leaderTerm = raft.id, raft.currentTerm
 			} else {
 				c.t.Fatalf("both %d and %d thinks they are leader", leaderId, raft.id)
 			}
@@ -240,7 +268,35 @@ func (c *cluster) checkSingleLeader() (uint32, uint64) {
 	return leaderId, leaderTerm
 }
 
-func (c *cluster) applyCommand(id uint32, term uint64, data []byte) {
+// getCurrentLeader returns the leader with the greatest term
+func (c *cluster) getCurrentLeader() (uint32, uint64) {
+	var leaderId uint32
+	var leaderTerm uint64
+
+	for _, raft := range c.rafts {
+		// lock raft state
+		raft.mu.Lock()
+		defer raft.mu.Unlock()
+
+		if raft.state == Leader {
+			if leaderId == 0 {
+				leaderId, leaderTerm = raft.id, raft.currentTerm
+			} else if leaderTerm == raft.currentTerm {
+				c.t.Fatalf("both node %d and node %d are leader with the same term %d", leaderId, raft.id, leaderTerm)
+			} else if leaderTerm < raft.currentTerm {
+				leaderId, leaderTerm = raft.id, raft.currentTerm
+			}
+		}
+	}
+
+	if leaderId == 0 {
+		c.t.Fatal("no leader found")
+	}
+
+	return leaderId, leaderTerm
+}
+
+func (c *cluster) applyCommand(id uint32, term uint64, data []byte) uint64 {
 	ctx := context.Background()
 
 	resp, err := c.rafts[id].ApplyCommand(ctx, &pb.ApplyCommandRequest{Data: data})
@@ -255,6 +311,8 @@ func (c *cluster) applyCommand(id uint32, term uint64, data []byte) {
 	if resp.GetEntry().GetTerm() != term {
 		c.t.Fatal("entry term mismatch")
 	}
+
+	return resp.Entry.GetId()
 }
 
 func (c *cluster) warnNumberOfCPUs() {
