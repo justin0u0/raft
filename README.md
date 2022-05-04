@@ -21,7 +21,7 @@ The implementation will be divided into 2 parts: leader election, log replicatio
 
 # Getting Started
 
-Download the Raft template [https://github.com/justin0u0/raft/archive/refs/tags/template.zip](https://github.com/justin0u0/raft/archive/refs/tags/template.zip).
+Download the Raft template [https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.0.zip](https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.0.zip).
 
 Note that for all `TODO`s without a `*`, the description can be found in the paper figure 2.
 
@@ -183,6 +183,8 @@ go test -timeout 60s -race -count 1 ./...
 ```
 
 > 💡 You can add `-v` flag when testing to show all logs even if the test pass.
+
+If the test does not pass, it is suggested to understand what is the test testing for, then using the log to find out bugs and errors. For example, the `TestLogReplicationWithFollowerFailure` test is testing for “a disconnected follower should not affect the log replication to other followers” and “after the follower comes back, the missing logs should be replicated to the follower”. If you have hard time understanding the test cases, please feel free to contact me 😊。
 
 # Future Work
 
