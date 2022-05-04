@@ -177,6 +177,14 @@ func TestLogReplicationWithFollowerFailure(t *testing.T) {
 			c.checkLog(id, uint64(i), leaderTerm, nil)
 		}
 	}
+
+	// follower comes back from network partition, should catch up all missing logs
+	c.connectAll(peerId)
+
+	time.Sleep(1 * time.Second)
+	for i := 1; i <= numLogs; i++ {
+		c.checkLog(peerId, uint64(i), leaderTerm, nil)
+	}
 }
 
 func TestLogReplicationWithLeaderFailover(t *testing.T) {
