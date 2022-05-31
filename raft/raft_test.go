@@ -381,7 +381,7 @@ func TestCannotCommitLogIfTermMismatch(t *testing.T) {
 	time.Sleep(1 * time.Second)
 	leaderId, leaderTerm := c.checkSingleLeader()
 	if newLeaderId != leaderId || newLeaderTerm != leaderTerm {
-		t.Fatal("new leader should not be affected when the old leader com")
+		t.Fatal("new leader should not be affected when the old leader come back")
 	}
 
 	// we disconnect all outgoing RPCs to all servers except the old leader
