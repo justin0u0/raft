@@ -111,7 +111,7 @@ func (c *cluster) initialize(serverId uint32) {
 	}
 
 	c.listerers[serverId] = lis
-	c.logger.Debug("setup listner",
+	c.logger.Debug("setup listener",
 		zap.Uint32("id", serverId),
 		zap.String("addr", c.listerers[serverId].Addr().String()))
 
