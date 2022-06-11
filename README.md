@@ -21,7 +21,7 @@ The implementation will be divided into 2 parts: leader election, log replicatio
 
 # Getting Started
 
-Download the Raft template [https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.1.zip](https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.1.zip).
+Download the Raft template [https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.2.zip](https://github.com/justin0u0/raft/archive/refs/tags/template-v1.0.2.zip).
 
 Note that for all `TODO`s without a `*`, the description can be found in the paper figure 2.
 
