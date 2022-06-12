@@ -1,0 +1,321 @@
+make all --print-data-base --no-builtin-variables --no-builtin-rules --question
+# GNU Make 3.81
+# Copyright (C) 2006  Free Software Foundation, Inc.
+# This is free software; see the source for copying conditions.
+# There is NO warranty; not even for MERCHANTABILITY or FITNESS FOR A
+# PARTICULAR PURPOSE.
+
+# This program built for i386-apple-darwin11.3.0
+
+# Make data base, printed on Thu Jun  9 18:38:36 2022
+
+# Variables
+
+# automatic
+<D = $(patsubst %/,%,$(dir $<))
+# automatic
+?F = $(notdir $?)
+# environment
+PROVIDE_FULLSTACK_ACTION = true
+# environment
+VSCODE_LOG_NATIVE = false
+# automatic
+?D = $(patsubst %/,%,$(dir $?))
+# automatic
+@D = $(patsubst %/,%,$(dir $@))
+# automatic
+@F = $(notdir $@)
+# makefile
+CURDIR := /Users/qs.chou/projects/myraftlab/raft
+# makefile
+SHELL = /bin/sh
+# environment
+VSCODE_NLS_CONFIG = {"locale":"zh-tw","availableLanguages":{},"_languagePackSupport":true}
+# environment
+_ = /usr/bin/make
+# environment
+MONGO_DATABASE = nthu_distributed_system
+# environment
+MINIO_BUCKET = videos
+# environment
+MONGO_URL = mongodb://127.0.0.1:27017/
+# makefile (from `Makefile', line 1)
+MAKEFILE_LIST :=  Makefile
+# environment
+VSCODE_AMD_ENTRYPOINT = vs/workbench/api/node/extensionHostProcess
+# environment
+POSTGRES_URL = postgres://postgres@postgres:5432/postgres?sslmode=disable
+# environment
+VSCODE_VERBOSE_LOGGING = true
+# environment
+__CFBundleIdentifier = com.microsoft.VSCode
+# environment
+MONGO_BIN = /Users/qs.chou/mongodb/bin
+# environment
+pytest = /Users/qs.chou/Library/Python/3.9/bin
+# environment
+VSCODE_IPC_HOOK_EXTHOST = /var/folders/88/2r1bpt2x49s_8czcw86x32v00000gn/T/vscode-ipc-9c81e15b-6a1a-4c3b-8c46-df781b6a09a7.sock
+# environment
+VSCODE_CWD = /
+# environment
+GOPROXY = https://proxy.golang.org,direct
+# makefile (from `Makefile', line 1)
+PATH := /Users/qs.chou/projects/myraftlab/raft/bin:/Users/qs.chou/miniforge3/bin:/Users/qs.chou/miniforge3/condabin:/opt/local/bin:/opt/local/sbin:/Users/qs.chou/.rbenv/shims:/Library/Frameworks/Python.framework/Versions/3.9/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/Library/TeX/texbin:/usr/local/go/bin:/usr/local/share/dotnet:/opt/X11/bin:~/.dotnet/tools:/Library/Apple/usr/bin:/Library/Frameworks/Mono.framework/Versions/Current/Commands:/Applications/Postgres.app/Contents/Versions/latest/bin:/Library/Frameworks/Python.framework/Versions/3.9/bin:/Users/qs.chou/Library/Python/3.9/bin:/Users/qs.chou/projects/athena:/Users/qs.chou/go:/Users/qs.chou/mongodb/bin:/Users/qs.chou/Library/Application Support/cloud-code/installer/google-cloud-sdk/bin:/Users/qs.chou/google-cloud-sdk/bin
+# environment
+GOLANG_EXECUTABLE = go
+# environment
+NTHUPRJ = /Users/qs.chou/projects/NTHU-DISTRIBUTED-SYSTEM
+# environment
+THREE_SCALE_USER_TOKEN = 207c527cfc2a6b8dcf4fa43ad7a976da
+# environment
+GOPATH = /Users/qs.chou/projects/NTHU-DISTRIBUTED-SYSTEM/go
+# environment
+GOCACHE = /Users/qs.chou/projects/NTHU-DISTRIBUTED-SYSTEM/src/.cache/gocache
+# environment
+VSCODE_LOG_STACK = false
+# environment
+ELECTRON_RUN_AS_NODE = 1
+# default
+.FEATURES := target-specific order-only second-expansion else-if archives jobserver check-symlink
+# environment
+UUID = 18f2cf4a-e119-4495-961a-8b31276549e2
+# environment
+CLOUDSDK_METRICS_ENVIRONMENT = cloudcode.vscode
+# environment
+SSH_AUTH_SOCK = /private/tmp/com.apple.launchd.hZPOJ9fwXI/Listeners
+# automatic
+%F = $(notdir $%)
+# environment
+DISPLAY = :0
+# environment
+CONDA_EXE = /Users/qs.chou/miniforge3/bin/conda
+# environment
+CLOUDSDK_METRICS_ENVIRONMENT_VERSION = 1.18.3
+# environment
+VSCODE_PIPE_LOGGING = true
+# environment
+PWD = /Users/qs.chou/projects/myraftlab/raft
+# environment
+GO_BIN = /Users/qs.chou/go
+# environment
+ORIGINAL_XDG_CURRENT_DESKTOP = undefined
+# environment
+GOMODCACHE = /Users/qs.chou/projects/NTHU-DISTRIBUTED-SYSTEM/go/pkg/mod
+# environment
+HOME = /Users/qs.chou
+# default
+MAKEFILEPATH = $(shell /usr/bin/xcode-select -print-path 2>/dev/null || echo /Developer)/Makefiles
+# environment
+VSCODE_CODE_CACHE_PATH = /Users/qs.chou/Library/Application Support/Code/CachedData/c3511e6c69bb39013c4a4b7b9566ec1ca73fc4d5
+# environment
+LOGNAME = qs.chou
+# environment
+APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL = 1
+# environment
+CONDA_PROMPT_MODIFIER = (base) 
+# environment
+TELEMETRY_ID = 3ca284a9-1dd3-4bd6-a122-ba8ce9d48ca0
+# environment
+VSCODE_HANDLES_UNCAUGHT_ERRORS = true
+# automatic
+^D = $(patsubst %/,%,$(dir $^))
+# environment
+MINIO_ENDPOINT = play.min.io
+# environment
+CONDA_DEFAULT_ENV = base
+# environment
+XPC_FLAGS = 0x0
+# default
+MAKE = $(MAKE_COMMAND)
+# default
+MAKECMDGOALS := all
+# environment
+SHLVL = 1
+# default
+MAKE_VERSION := 3.81
+# environment
+USER = qs.chou
+# makefile
+.DEFAULT_GOAL := proto
+# environment
+MINIO_USERNAME = Q3AM3UQ867SPQQA43P2F
+# environment
+ATHENA_HOME = /Users/qs.chou/projects/athena
+# automatic
+%D = $(patsubst %/,%,$(dir $%))
+# environment
+CONDA_SHLVL = 1
+# default
+MAKE_COMMAND := /Library/Developer/CommandLineTools/usr/bin/make
+# environment
+UTM_SOURCE = vscode
+# default
+.VARIABLES := 
+# environment
+TMPDIR = /var/folders/88/2r1bpt2x49s_8czcw86x32v00000gn/T/
+# automatic
+*F = $(notdir $*)
+# environment
+VSCODE_IPC_HOOK = /Users/qs.chou/Library/Application Support/Code/1.67.2-main.sock
+# makefile
+MAKEFLAGS = Rrqp
+# environment
+MFLAGS = -Rrqp
+# automatic
+*D = $(patsubst %/,%,$(dir $*))
+# environment
+XPC_SERVICE_NAME = application.com.microsoft.VSCode.16412005.16412011
+# automatic
++D = $(patsubst %/,%,$(dir $+))
+# environment
+RECOMMENDER_API_URL = https://gw.api.openshift.io//api/v2
+# automatic
++F = $(notdir $+)
+# environment
+__CF_USER_TEXT_ENCODING = 0x1F5:0x2:0x35
+# environment
+COMMAND_MODE = unix2003
+# environment
+python3 = /Library/Frameworks/Python.framework/Versions/3.9/bin
+# default
+MAKEFILES := 
+# environment
+RBENV_SHELL = zsh
+# automatic
+<F = $(notdir $<)
+# environment
+REDIS_ADDR = localhost:6379
+# environment
+LC_ALL = C
+# environment
+CONDA_PYTHON_EXE = /Users/qs.chou/miniforge3/bin/python
+# automatic
+^F = $(notdir $^)
+# default
+SUFFIXES := 
+# environment
+_CE_M = 
+# environment
+postgresapp = /Applications/Postgres.app/Contents/Versions/latest/bin
+# default
+.INCLUDE_DIRS = /usr/local/include
+# environment
+MINIO_PASSWORD = zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG
+# environment
+MAKELEVEL := 0
+# environment
+CONDA_PREFIX = /Users/qs.chou/miniforge3
+# environment
+VSCODE_PID = 2507
+# environment
+_CE_CONDA = 
+# environment
+LANG = C
+# variable set hash-table stats:
+# Load=100/1024=10%, Rehash=0, Collisions=7/127=6%
+
+# Pattern-specific Variable Values
+
+# No pattern-specific variable values.
+
+# Directories
+
+# . (device 16777231, inode 15103941): 14 files, no impossibilities.
+
+# 14 files, no impossibilities in 1 directories.
+
+# Implicit Rules
+
+# No implicit rules.
+
+# Files
+
+# Not a target:
+all:
+#  Command-line target.
+#  Implicit rule search has been done.
+#  File does not exist.
+#  File has not been updated.
+# variable set hash-table stats:
+# Load=0/32=0%, Rehash=0, Collisions=0/0=0%
+
+.PHONY: proto
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+.SUFFIXES:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# Not a target:
+Makefile:
+#  Implicit rule search has been done.
+#  Last modified 2022-05-22 15:02:22
+#  File has been updated.
+#  Successfully updated.
+# variable set hash-table stats:
+# Load=0/32=0%, Rehash=0, Collisions=0/0=0%
+
+proto: bin/protoc-gen-go bin/protoc-gen-go-grpc
+#  Phony target (prerequisite of .PHONY).
+#  Implicit rule search has not been done.
+#  File does not exist.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 5):
+	protoc \
+	-I . \
+	--go_out=paths=source_relative:. \
+	--go-grpc_out=paths=source_relative:. \
+	./pb/*.proto
+	
+
+# Not a target:
+.DEFAULT:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+bin/protoc-gen-go: go.mod
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+#  commands to execute (from `Makefile', line 12):
+	go build -o $@ google.golang.org/protobuf/cmd/protoc-gen-go
+	
+
+bin/protoc-gen-go-grpc: go.mod
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+ 
+make: *** No rule to make target `all'.  Stop.
+
+#  commands to execute (from `Makefile', line 15):
+	go build -o $@ google.golang.org/grpc/cmd/protoc-gen-go-grpc
+	
+
+# Not a target:
+go.mod:
+#  Implicit rule search has not been done.
+#  Modification time never checked.
+#  File has not been updated.
+
+# files hash-table stats:
+# Load=9/1024=1%, Rehash=0, Collisions=2/26=8%
+# VPATH Search Paths
+
+# No `vpath' search paths.
+
+# No general (`VPATH' variable) search path.
+
+# # of strings in strcache: 1
+# # of strcache buffers: 1
+# strcache size: total = 4096 / max = 4096 / min = 4096 / avg = 4096
+# strcache free: total = 4087 / max = 4087 / min = 4087 / avg = 4087
+
+# Finished Make data base on Thu Jun  9 18:38:36 2022
+
+ 

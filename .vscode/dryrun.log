@@ -1,0 +1,11 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory `/Users/qs.chou/projects/myraftlab/raft'
+go build -o bin/protoc-gen-go google.golang.org/protobuf/cmd/protoc-gen-go
+go build -o bin/protoc-gen-go-grpc google.golang.org/grpc/cmd/protoc-gen-go-grpc
+protoc \
+		-I . \
+		--go_out=paths=source_relative:. \
+		--go-grpc_out=paths=source_relative:. \
+		./pb/*.proto
+make: Leaving directory `/Users/qs.chou/projects/myraftlab/raft'
+ 
